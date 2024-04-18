@@ -16,14 +16,18 @@
 
 package com.example.inventory.data
 
+import android.os.Build
+import androidx.annotation.RequiresApi
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import java.time.LocalDateTime
+
 
 /**
  * Entity data class represents a single row in the database.
  */
 @Entity(tableName = "items")
-data class Item(
+data class Item @RequiresApi(Build.VERSION_CODES.O) constructor(
     @PrimaryKey(autoGenerate = true)
     val id: Int = 0,
     val name: String,
