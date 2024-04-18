@@ -105,12 +105,13 @@ fun ItemEntryBody(
     ) {
         ItemInputForm(
             itemDetails = itemUiState.itemDetails,
+            itemEdit = itemUiState.isEdit,
             onValueChange = onItemValueChange,
             modifier = Modifier.fillMaxWidth()
         )
         Button(
             onClick = onSaveClick,
-            enabled = itemUiState.isEntryValid,
+            enabled = true, //itemUiState.isEntryValid,
             shape = MaterialTheme.shapes.small,
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -123,6 +124,7 @@ fun ItemEntryBody(
 @Composable
 fun ItemInputForm(
     itemDetails: ItemDetails,
+    itemEdit: Boolean,
     modifier: Modifier = Modifier,
     onValueChange: (ItemDetails) -> Unit = {},
     enabled: Boolean = true
@@ -133,7 +135,7 @@ fun ItemInputForm(
     ) {
         OutlinedTextField(
             //value = itemDetails.name,
-            value = LocalDateTime.now().toString(),
+            value = if (itemEdit) {itemDetails.name} else {LocalDateTime.now().toString()},
             onValueChange = { onValueChange(itemDetails.copy(name = it)) },
             label = { Text(stringResource(R.string.item_name_req)) },
             colors = OutlinedTextFieldDefaults.colors(

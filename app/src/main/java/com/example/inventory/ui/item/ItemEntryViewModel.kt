@@ -16,6 +16,8 @@
 
 package com.example.inventory.ui.item
 
+import android.os.Build
+import androidx.annotation.RequiresApi
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -23,6 +25,7 @@ import androidx.lifecycle.ViewModel
 import com.example.inventory.data.Item
 import com.example.inventory.data.ItemsRepository
 import java.text.NumberFormat
+import java.time.LocalDateTime
 
 /**
  * ViewModel to validate and insert items in the Room database.
@@ -48,7 +51,7 @@ class ItemEntryViewModel(private val itemsRepository: ItemsRepository) : ViewMod
      * Inserts an [Item] in the Room database
      */
     suspend fun saveItem() {
-        if (validateInput()) {
+        if (/*validateInput()*/ true) {
             itemsRepository.insertItem(itemUiState.itemDetails.toItem())
         }
     }
@@ -65,12 +68,13 @@ class ItemEntryViewModel(private val itemsRepository: ItemsRepository) : ViewMod
  */
 data class ItemUiState(
     val itemDetails: ItemDetails = ItemDetails(),
-    val isEntryValid: Boolean = false
+    val isEntryValid: Boolean = false,
+    val isEdit: Boolean = false
 )
 
 data class ItemDetails(
     val id: Int = 0,
-    val name: String = "",
+    val name: String = LocalDateTime.now().toString(),
     val price: String = "",
     val quantity: String = "",
 )
@@ -80,6 +84,7 @@ data class ItemDetails(
  * not a valid [Double], then the price will be set to 0.0. Similarly if the value of
  * [ItemUiState] is not a valid [Int], then the quantity will be set to 0
  */
+@RequiresApi(Build.VERSION_CODES.O)
 fun ItemDetails.toItem(): Item = Item(
     id = id,
     name = name,
@@ -94,9 +99,10 @@ fun Item.formatedPrice(): String {
 /**
  * Extension function to convert [Item] to [ItemUiState]
  */
-fun Item.toItemUiState(isEntryValid: Boolean = false): ItemUiState = ItemUiState(
+fun Item.toItemUiState(isEntryValid: Boolean = false,isEdit: Boolean = false): ItemUiState = ItemUiState(
     itemDetails = this.toItemDetails(),
-    isEntryValid = isEntryValid
+    isEntryValid = isEntryValid,
+    isEdit = isEdit
 )
 
 /**

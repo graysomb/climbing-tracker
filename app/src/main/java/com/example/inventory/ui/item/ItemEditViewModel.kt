@@ -48,7 +48,7 @@ class ItemEditViewModel(
             itemUiState = itemsRepository.getItemStream(itemId)
                 .filterNotNull()
                 .first()
-                .toItemUiState(true)
+                .toItemUiState(true, true)
         }
     }
 
