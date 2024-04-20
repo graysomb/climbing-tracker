@@ -30,7 +30,10 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface ItemDao {
 
-    @Query("SELECT * from items ORDER BY name DESC")
+    @Query("SELECT * FROM items WHERE id = (SELECT MAX(id) FROM items)")
+    fun getLastItem(): Flow<Item>
+
+    @Query("SELECT * from items ORDER BY id DESC")
     fun getAllItems(): Flow<List<Item>>
 
     @Query("SELECT * from items WHERE id = :id")

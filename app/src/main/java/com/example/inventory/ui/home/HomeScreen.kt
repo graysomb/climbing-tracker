@@ -56,6 +56,9 @@ import com.example.inventory.data.Item
 import com.example.inventory.ui.AppViewModelProvider
 import com.example.inventory.ui.navigation.NavigationDestination
 import com.example.inventory.ui.theme.InventoryTheme
+import java.time.Duration
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 
 
 object HomeDestination : NavigationDestination {
@@ -78,12 +81,20 @@ fun HomeScreen(
     val homeUiState by viewModel.homeUiState.collectAsState()
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
     val currentTime by viewModel.currentTime.collectAsState()
+    //val deformatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
+    //val reformatter = DateTimeFormatter.ofPattern("HH:mm:ss")
+    //val lastTime = LocalDateTime.parse(homeUiState.lastItem.name, deformatter)
+    //val curTime = LocalDateTime.parse(currentTime, reformatter)
+    //val timeDifferencer = TimeDifference()
+
+
 
     Scaffold(
         modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             InventoryTopAppBar(
-                title = currentTime,
+                title = TimeDifference.getFormattedDuration(currentTime, homeUiState.lastItem.name) ,
+                //title = currentTime,
                 canNavigateBack = false,
                 scrollBehavior = scrollBehavior
             )

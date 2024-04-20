@@ -28,8 +28,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
+import java.time.Duration
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
@@ -54,16 +56,25 @@ class HomeViewModel(itemsRepository: ItemsRepository) : ViewModel() {
     }
 
     val homeUiState: StateFlow<HomeUiState> =
-        itemsRepository.getAllItemsStream().map { HomeUiState(it) }
-            .stateIn(
-                scope = viewModelScope,
-                started = SharingStarted.WhileSubscribed(TIMEOUT_MILLIS),
-                initialValue = HomeUiState()
-            )
+        combine(
+            itemsRepository.getAllItemsStream(),
+            itemsRepository.getLastItemStream()
+        ) { allItems, lastItem ->
+            HomeUiState(itemList = allItems, lastItem = lastItem)
+        }.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(TIMEOUT_MILLIS),
+            initialValue = HomeUiState(lastItem = Item(1,LocalDateTime.now().toString(),1,1))
+        )
+
     fun timeTickFlow(): Flow<String> = flow {
         while (true) {
             val currentDateTime = LocalDateTime.now()
-            val formattedTime = currentDateTime.format(DateTimeFormatter.ofPattern("mm:ss"))
+            //val lastItem = homeUiState.value.lastItem
+            //val deformatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+            //val lastTime = LocalDateTime.parse(lastItem?.name,deformatter)
+            //val timeDifference = Duration.between(lastTime, currentDateTime)
+            val formattedTime = currentDateTime.format(DateTimeFormatter.ofPattern("HH:mm:ss"))
             emit(formattedTime)
             delay(1000) // Update every second
         }
@@ -77,4 +88,4 @@ class HomeViewModel(itemsRepository: ItemsRepository) : ViewModel() {
 /**
  * Ui State for HomeScreen
  */
-data class HomeUiState(val itemList: List<Item> = listOf())
+data class HomeUiState(val itemList: List<Item> = listOf(),val lastItem: Item)

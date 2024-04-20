@@ -27,6 +27,8 @@ interface ItemsRepository {
      */
     fun getAllItemsStream(): Flow<List<Item>>
 
+    fun getLastItemStream(): Flow<Item>
+
     /**
      * Retrieve an item from the given data source that matches with the [id].
      */
