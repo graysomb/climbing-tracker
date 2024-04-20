@@ -23,6 +23,7 @@ import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
@@ -55,7 +56,7 @@ fun InventoryTopAppBar(
     navigateUp: () -> Unit = {}
 ) {
     CenterAlignedTopAppBar(
-        title = { Text(title) },
+        title = { Text(text = title, style = MaterialTheme.typography.displayLarge) },
         modifier = modifier,
         scrollBehavior = scrollBehavior,
         navigationIcon = {

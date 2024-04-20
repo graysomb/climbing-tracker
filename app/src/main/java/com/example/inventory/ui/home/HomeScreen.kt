@@ -54,9 +54,9 @@ import com.example.inventory.InventoryTopAppBar
 import com.example.inventory.R
 import com.example.inventory.data.Item
 import com.example.inventory.ui.AppViewModelProvider
-import com.example.inventory.ui.item.formatedPrice
 import com.example.inventory.ui.navigation.NavigationDestination
 import com.example.inventory.ui.theme.InventoryTheme
+
 
 object HomeDestination : NavigationDestination {
     override val route = "home"
@@ -77,12 +77,13 @@ fun HomeScreen(
 ) {
     val homeUiState by viewModel.homeUiState.collectAsState()
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
+    val currentTime by viewModel.currentTime.collectAsState()
 
     Scaffold(
         modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             InventoryTopAppBar(
-                title = stringResource(HomeDestination.titleRes),
+                title = currentTime,
                 canNavigateBack = false,
                 scrollBehavior = scrollBehavior
             )

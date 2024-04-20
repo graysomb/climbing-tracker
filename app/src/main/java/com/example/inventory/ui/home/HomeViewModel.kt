@@ -24,6 +24,14 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.launch
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 
 /**
  * ViewModel to retrieve all items in the Room database.
@@ -34,6 +42,17 @@ class HomeViewModel(itemsRepository: ItemsRepository) : ViewModel() {
      * Holds home ui state. The list of items are retrieved from [ItemsRepository] and mapped to
      * [HomeUiState]
      */
+    private val _currentTime = MutableStateFlow("")
+    val currentTime: StateFlow<String> = _currentTime.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            timeTickFlow().collect {
+                _currentTime.value = it
+            }
+        }
+    }
+
     val homeUiState: StateFlow<HomeUiState> =
         itemsRepository.getAllItemsStream().map { HomeUiState(it) }
             .stateIn(
@@ -41,6 +60,14 @@ class HomeViewModel(itemsRepository: ItemsRepository) : ViewModel() {
                 started = SharingStarted.WhileSubscribed(TIMEOUT_MILLIS),
                 initialValue = HomeUiState()
             )
+    fun timeTickFlow(): Flow<String> = flow {
+        while (true) {
+            val currentDateTime = LocalDateTime.now()
+            val formattedTime = currentDateTime.format(DateTimeFormatter.ofPattern("mm:ss"))
+            emit(formattedTime)
+            delay(1000) // Update every second
+        }
+    }
 
     companion object {
         private const val TIMEOUT_MILLIS = 5_000L
