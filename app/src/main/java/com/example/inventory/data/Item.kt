@@ -31,6 +31,6 @@ data class Item @RequiresApi(Build.VERSION_CODES.O) constructor(
     @PrimaryKey(autoGenerate = true)
     val id: Int = 0,
     val name: String,
-    val price: Double,
+    val price: Int,
     val quantity: Int
 )

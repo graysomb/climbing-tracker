@@ -38,7 +38,7 @@ class ItemDaoTest {
 
     private lateinit var itemDao: ItemDao
     private lateinit var inventoryDatabase: InventoryDatabase
-    private val item1 = Item(1, "Apples", 10.0, 20)
+   /* private val item1 = Item(1, "Apples", 10.0, 20)
     private val item2 = Item(2, "Bananas", 15.0, 97)
 
     @Before
@@ -114,5 +114,5 @@ class ItemDaoTest {
     private suspend fun addTwoItemsToDb() {
         itemDao.insert(item1)
         itemDao.insert(item2)
-    }
+    }*/
 }

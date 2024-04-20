@@ -88,12 +88,13 @@ data class ItemDetails(
 fun ItemDetails.toItem(): Item = Item(
     id = id,
     name = name,
-    price = price.toDoubleOrNull() ?: 0.0,
+    price = price.toIntOrNull() ?: 0,
     quantity = quantity.toIntOrNull() ?: 0
 )
 
 fun Item.formatedPrice(): String {
-    return NumberFormat.getCurrencyInstance().format(price)
+    //return NumberFormat.getCurrencyInstance().format(price)
+    return price.toString()
 }
 
 /**
