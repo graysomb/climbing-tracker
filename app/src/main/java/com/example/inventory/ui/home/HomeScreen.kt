@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -43,12 +44,14 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.inventory.InventoryTopAppBar
 import com.example.inventory.R
@@ -56,9 +59,21 @@ import com.example.inventory.data.Item
 import com.example.inventory.ui.AppViewModelProvider
 import com.example.inventory.ui.navigation.NavigationDestination
 import com.example.inventory.ui.theme.InventoryTheme
+import com.github.mikephil.charting.charts.BarChart
+import com.github.mikephil.charting.data.BarData
+import com.github.mikephil.charting.data.BarDataSet
+import com.github.mikephil.charting.data.BarEntry
+import com.github.mikephil.charting.formatter.ValueFormatter
+import java.text.SimpleDateFormat
 import java.time.Duration
+import java.time.Instant
+import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.Date
+import java.util.Locale
+import kotlin.math.round
 
 
 object HomeDestination : NavigationDestination {
@@ -81,13 +96,6 @@ fun HomeScreen(
     val homeUiState by viewModel.homeUiState.collectAsState()
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
     val currentTime by viewModel.currentTime.collectAsState()
-    //val deformatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
-    //val reformatter = DateTimeFormatter.ofPattern("HH:mm:ss")
-    //val lastTime = LocalDateTime.parse(homeUiState.lastItem.name, deformatter)
-    //val curTime = LocalDateTime.parse(currentTime, reformatter)
-    //val timeDifferencer = TimeDifference()
-
-
 
     Scaffold(
         modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
@@ -137,6 +145,7 @@ private fun HomeBody(
                 style = MaterialTheme.typography.titleLarge
             )
         } else {
+            ItemBarChart(itemList, Modifier.weight(1f))
             InventoryList(
                 itemList = itemList,
                 onItemClick = { onItemClick(it.id) },
@@ -191,6 +200,69 @@ private fun InventoryItem(
         }
     }
 }
+
+@Composable
+fun ItemBarChart(itemList: List<Item>, modifier: Modifier = Modifier) {
+
+
+    val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
+
+    val items = itemList
+
+    val dailyQuantities = items.groupBy { item ->
+        LocalDateTime.parse(item.name, formatter).dayOfYear.toFloat()
+    }.mapValues { (_, itemsForDay) ->
+        itemsForDay.sumOf { it.price.toInt() }
+    }
+
+    val entries = dailyQuantities.map { (day, sumday) ->
+        BarEntry(day, sumday.toFloat())
+    }
+
+    val dataSet = BarDataSet(entries, "Item Quantities").apply {
+        // Customize appearance (color, etc.)
+    }
+
+    val barData = BarData(dataSet)
+    Text(text = "V Points", style = MaterialTheme.typography.titleMedium)
+    AndroidView(
+        modifier = Modifier
+            .fillMaxWidth()
+            .fillMaxHeight(.3f),
+        factory = { context ->
+            BarChart(context).apply {
+                // Configure chart appearance (axis labels, grid, etc.)
+                xAxis.textSize = 16f
+                //xAxis.textColor = MaterialTheme.colorScheme.primary.toArgb()
+                xAxis.textColor = android.graphics.Color.CYAN
+                xAxis.position = com.github.mikephil.charting.components.XAxis.XAxisPosition.BOTTOM
+                axisLeft.textSize = 16f
+                //xAxis.textColor = MaterialTheme.colorScheme.primary.toArgb()
+                axisLeft.textColor = android.graphics.Color.CYAN
+
+                data = barData
+                description.isEnabled = false // Disable description
+                legend.isEnabled = false // Disable legend
+                // ... other configurations
+
+                xAxis.valueFormatter = object : ValueFormatter() {
+                    override fun getFormattedValue(value: Float): String {
+                        val localDate = LocalDate.ofYearDay(LocalDate.now().year, value.toInt())
+                        val formatter = DateTimeFormatter.ofPattern("MM-dd")
+                        return localDate.format(formatter)
+                    }
+                }
+
+
+            }
+        },
+        update = { barChart ->
+            barChart.notifyDataSetChanged()
+            barChart.invalidate()
+        }
+    )
+}
+
 
 @Preview(showBackground = true)
 @Composable
