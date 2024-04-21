@@ -17,6 +17,7 @@
 package com.example.inventory.ui.home
 
 import android.annotation.SuppressLint
+import android.graphics.Color
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -202,7 +203,7 @@ private fun InventoryItem(
 }
 
 @Composable
-fun ItemBarChart(itemList: List<Item>, modifier: Modifier = Modifier) {
+fun ItemBarChart2(itemList: List<Item>, modifier: Modifier = Modifier) {
 
 
     val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
@@ -224,6 +225,7 @@ fun ItemBarChart(itemList: List<Item>, modifier: Modifier = Modifier) {
     }
 
     val barData = BarData(dataSet)
+    barData.setDrawValues(false)
     Text(text = "V Points", style = MaterialTheme.typography.titleMedium)
     AndroidView(
         modifier = Modifier
@@ -263,6 +265,84 @@ fun ItemBarChart(itemList: List<Item>, modifier: Modifier = Modifier) {
     )
 }
 
+
+@Composable
+fun ItemBarChart(itemList: List<Item>, modifier: Modifier = Modifier) {
+    val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
+    val items = itemList
+
+    // Group items by day and calculate sums for each quantity category
+    val dailyQuantities = items.groupBy { item ->
+        LocalDateTime.parse(item.name, formatter).dayOfYear.toFloat()
+    }.mapValues { (_, itemsForDay) ->
+        val zeroQuantitySum = itemsForDay.filter { it.quantity > 0 }.sumOf { it.price.toInt() }
+        val positiveQuantitySum = itemsForDay.filter { it.quantity > -1 }.sumOf { it.price.toInt() }
+        listOf(zeroQuantitySum.toFloat(), positiveQuantitySum.toFloat())
+    }
+
+    // Create BarEntry lists for each quantity category
+    val zeroQuantityEntries = dailyQuantities.map { (day, sums) ->
+        BarEntry(day, sums[0])
+    }
+    val positiveQuantityEntries = dailyQuantities.map { (day, sums) ->
+        BarEntry(day, sums[1])
+    }
+
+    // Create BarDataSets with colors
+    val zeroQuantityDataSet = BarDataSet(zeroQuantityEntries, "Send").apply {
+        color = Color.CYAN
+    }
+    val positiveQuantityDataSet = BarDataSet(positiveQuantityEntries, "Attempt").apply {
+        color = Color.MAGENTA
+    }
+
+    // Create BarData and configure stacking
+    val barData = BarData(positiveQuantityDataSet,zeroQuantityDataSet,)
+    barData.isHighlightEnabled = false // Optional: disable highlighting
+    barData.setDrawValues(false)      // Optional: hide values on bars
+
+    // ... rest of your Composable code (AndroidView, configuration, etc.)
+    Text(text = "V Points", style = MaterialTheme.typography.titleMedium)
+    AndroidView(
+        modifier = Modifier
+            .fillMaxWidth()
+            .fillMaxHeight(.3f),
+        factory = { context ->
+            BarChart(context).apply {
+                // Configure chart appearance (axis labels, grid, etc.)
+                xAxis.textSize = 16f
+                //xAxis.textColor = MaterialTheme.colorScheme.primary.toArgb()
+                xAxis.textColor = android.graphics.Color.CYAN
+                xAxis.position = com.github.mikephil.charting.components.XAxis.XAxisPosition.BOTTOM
+                axisLeft.textSize = 16f
+                //xAxis.textColor = MaterialTheme.colorScheme.primary.toArgb()
+                axisLeft.textColor = android.graphics.Color.CYAN
+
+                data = barData
+                description.isEnabled = false // Disable description
+                legend.textSize=16f
+                legend.textColor = android.graphics.Color.CYAN
+
+                //legend.isEnabled = false // Disable legend
+                // ... other configurations
+
+                xAxis.valueFormatter = object : ValueFormatter() {
+                    override fun getFormattedValue(value: Float): String {
+                        val localDate = LocalDate.ofYearDay(LocalDate.now().year, value.toInt())
+                        val formatter = DateTimeFormatter.ofPattern("MM-dd")
+                        return localDate.format(formatter)
+                    }
+                }
+
+
+            }
+        },
+        update = { barChart ->
+            barChart.notifyDataSetChanged()
+            barChart.invalidate()
+        }
+    )
+}
 
 @Preview(showBackground = true)
 @Composable
