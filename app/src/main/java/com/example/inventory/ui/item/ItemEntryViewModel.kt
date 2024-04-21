@@ -77,6 +77,8 @@ data class ItemDetails(
     val name: String = LocalDateTime.now().toString(),
     val price: String = "",
     val quantity: String = "",
+    val type: String = "",
+    val weight: String = ""
 )
 
 /**
@@ -89,7 +91,9 @@ fun ItemDetails.toItem(): Item = Item(
     id = id,
     name = name,
     price = price.toIntOrNull() ?: 0,
-    quantity = quantity.toIntOrNull() ?: 0
+    quantity = quantity.toIntOrNull() ?: 0,
+    type = type.toIntOrNull() ?: 0,
+    weight = weight.toDoubleOrNull() ?: 0.0
 )
 
 fun Item.formatedPrice(): String {

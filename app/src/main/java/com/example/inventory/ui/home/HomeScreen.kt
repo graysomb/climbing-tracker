@@ -18,6 +18,8 @@ package com.example.inventory.ui.home
 
 import android.annotation.SuppressLint
 import android.graphics.Color
+import android.os.Build
+import androidx.annotation.RequiresApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -31,6 +33,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AddCircle
+import androidx.compose.material.icons.twotone.Add
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -109,16 +113,34 @@ fun HomeScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = navigateToItemEntry,
-                shape = MaterialTheme.shapes.medium,
-                modifier = Modifier.padding(dimensionResource(id = R.dimen.padding_large))
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.Bottom,
+                horizontalAlignment = Alignment.End
             ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = stringResource(R.string.item_entry_title)
-                )
+                FloatingActionButton(
+                    onClick = navigateToItemEntry,
+                    shape = MaterialTheme.shapes.medium,
+                    modifier = Modifier.padding(dimensionResource(id = R.dimen.padding_large))
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = stringResource(R.string.item_entry_title)
+                    )
+                }
+                FloatingActionButton(
+                    onClick = navigateToItemEntry,
+                    shape = MaterialTheme.shapes.medium,
+                    modifier = Modifier.padding(dimensionResource(id = R.dimen.padding_large))
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AddCircle,
+                        contentDescription = stringResource(R.string.item_entry_title)
+                    )
+                }
             }
+
+
         },
     ) { innerPadding ->
         HomeBody(
@@ -202,6 +224,7 @@ private fun InventoryItem(
     }
 }
 
+@RequiresApi(Build.VERSION_CODES.O)
 @Composable
 fun ItemBarChart2(itemList: List<Item>, modifier: Modifier = Modifier) {
 
@@ -266,6 +289,7 @@ fun ItemBarChart2(itemList: List<Item>, modifier: Modifier = Modifier) {
 }
 
 
+@RequiresApi(Build.VERSION_CODES.O)
 @Composable
 fun ItemBarChart(itemList: List<Item>, modifier: Modifier = Modifier) {
     val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
@@ -362,12 +386,13 @@ fun HomeBodyEmptyListPreview() {
     }
 }
 
+@RequiresApi(Build.VERSION_CODES.O)
 @Preview(showBackground = true)
 @Composable
 fun InventoryItemPreview() {
     InventoryTheme {
         InventoryItem(
-            Item(1, "Game", 10, 20),
+            Item(1, "Game", 10, 20,1,1.0),
         )
     }
 }
