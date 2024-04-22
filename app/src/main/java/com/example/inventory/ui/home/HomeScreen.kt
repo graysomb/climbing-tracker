@@ -128,7 +128,7 @@ fun HomeScreen(
                         contentDescription = stringResource(R.string.item_entry_title)
                     )
                 }
-                FloatingActionButton(
+               /* FloatingActionButton(
                     onClick = navigateToItemEntry,
                     shape = MaterialTheme.shapes.medium,
                     modifier = Modifier.padding(dimensionResource(id = R.dimen.padding_large))
@@ -137,7 +137,7 @@ fun HomeScreen(
                         imageVector = Icons.Default.AddCircle,
                         contentDescription = stringResource(R.string.item_entry_title)
                     )
-                }
+                }*/
             }
 
 
@@ -196,6 +196,7 @@ private fun InventoryList(
 private fun InventoryItem(
     item: Item, modifier: Modifier = Modifier
 ) {
+
     Card(
         modifier = modifier, elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
@@ -216,10 +217,29 @@ private fun InventoryItem(
                     style = MaterialTheme.typography.titleMedium
                 )
             }
-            Text(
-                text = stringResource(R.string.in_stock, item.quantity),
-                style = MaterialTheme.typography.titleMedium
-            )
+            Row(modifier = modifier.fillMaxWidth()) {
+                fun typeCast(Type: Int): String {
+                    if (Type == 0) {
+                        return "Climb"
+                    } else if (Type == 1) {
+                        return "Hang"
+                    } else if (Type == 2) {
+                        return "Pull"
+                    } else {
+                        return "Other"
+                    }
+                }
+                    Text(
+                    text = stringResource(if(item.type<1){R.string.in_stock} else {R.string.rep_val}, item.quantity),
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Text(
+                        text = typeCast(item.type),
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(start = 20.dp)
+                    )
+
+            }
         }
     }
 }
@@ -392,7 +412,7 @@ fun HomeBodyEmptyListPreview() {
 fun InventoryItemPreview() {
     InventoryTheme {
         InventoryItem(
-            Item(1, "Game", 10, 20,1,1.0),
+            Item(1, "Game", 10, 20,1,1.0,1),
         )
     }
 }

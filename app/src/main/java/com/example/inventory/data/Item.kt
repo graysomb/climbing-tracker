@@ -35,4 +35,5 @@ data class Item @RequiresApi(Build.VERSION_CODES.O) constructor(
     val quantity: Int,
     val type: Int,
     val weight: Double,
+    val outside: Int,
 )

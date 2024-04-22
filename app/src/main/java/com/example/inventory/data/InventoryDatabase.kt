@@ -26,7 +26,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 /**
  * Database class with a singleton Instance object.
  */
-@Database(entities = [Item::class], version = 3, exportSchema = false)
+@Database(entities = [Item::class], version = 4, exportSchema = false)
 abstract class InventoryDatabase : RoomDatabase() {
 
     abstract fun itemDao(): ItemDao
@@ -42,6 +42,12 @@ abstract class InventoryDatabase : RoomDatabase() {
                 database.execSQL("ALTER TABLE Items ADD COLUMN weight REAL NOT NULL DEFAULT 0.0")
             }
         }
+
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE Items ADD COLUMN outside INTEGER NOT NULL DEFAULT 0")
+            }
+        }
         fun getDatabase(context: Context): InventoryDatabase {
             // if the Instance is not null, return it, otherwise create a new database instance.
             return Instance ?: synchronized(this) {
@@ -52,6 +58,7 @@ abstract class InventoryDatabase : RoomDatabase() {
                      * attempts to perform a migration with no defined migration path.
                      */
                     .addMigrations(MIGRATION_2_3)
+                    .addMigrations(MIGRATION_3_4)
                     //.fallbackToDestructiveMigration()
                     .build()
                     .also { Instance = it }

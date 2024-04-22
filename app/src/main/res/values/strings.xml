@@ -30,6 +30,8 @@
     <string name="price">Grade</string>
     <string name="quantity_in_stock">Send</string>
     <string name="in_stock">Send: %d</string>
+    <string name="weight_val">weight: %d</string>
+    <string name="rep_val">rep: %d</string>
     <string name="v">V%d</string>
     <string name="quantity_req">Send*</string>
     <string name="save_action">Save</string>
@@ -37,4 +39,9 @@
     <string name="yes">Yes</string>
     <string name="required_fields">*required fields</string>
     <string name="grade">Grade</string>
+    <string name="weight">Weight</string>
+    <string name="reps">Reps</string>
+    <string name="send">Send</string>
+    <string name="type">Type</string>
+    <string name="outside">outside</string>
 </resources>

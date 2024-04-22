@@ -166,6 +166,18 @@ private fun ItemDetailsBody(
 fun ItemDetails(
     item: Item, modifier: Modifier = Modifier
 ) {
+    fun typeCast(Type: Int): String {
+        if (Type == 0) {
+            return "Climb"
+        } else if (Type == 1) {
+            return "Hang"
+        } else if (Type == 2) {
+            return "Pull"
+        } else {
+            return "Other"
+        }
+
+    }
     Card(
         modifier = modifier, colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.primaryContainer,
@@ -178,6 +190,16 @@ fun ItemDetails(
                 .padding(dimensionResource(id = R.dimen.padding_medium)),
             verticalArrangement = Arrangement.spacedBy(dimensionResource(id = R.dimen.padding_medium))
         ) {
+            ItemDetailsRow(
+                labelResID = R.string.type,
+                itemDetail = typeCast(item.type),
+                modifier = Modifier.padding(
+                    horizontal = dimensionResource(
+                        id = R.dimen
+                            .padding_medium
+                    )
+                )
+            )
             ItemDetailsRow(
                 labelResID = R.string.item,
                 itemDetail = item.name,
@@ -201,6 +223,16 @@ fun ItemDetails(
             ItemDetailsRow(
                 labelResID = R.string.price,
                 itemDetail = item.formatedPrice(),
+                modifier = Modifier.padding(
+                    horizontal = dimensionResource(
+                        id = R.dimen
+                            .padding_medium
+                    )
+                )
+            )
+            ItemDetailsRow(
+                labelResID = R.string.weight,
+                itemDetail = item.weight.toString(),
                 modifier = Modifier.padding(
                     horizontal = dimensionResource(
                         id = R.dimen

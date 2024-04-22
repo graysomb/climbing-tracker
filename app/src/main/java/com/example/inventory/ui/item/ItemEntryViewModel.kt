@@ -78,7 +78,8 @@ data class ItemDetails(
     val price: String = "",
     val quantity: String = "",
     val type: String = "",
-    val weight: String = ""
+    val weight: String = "",
+    val outside: String = ""
 )
 
 /**
@@ -93,7 +94,8 @@ fun ItemDetails.toItem(): Item = Item(
     price = price.toIntOrNull() ?: 0,
     quantity = quantity.toIntOrNull() ?: 0,
     type = type.toIntOrNull() ?: 0,
-    weight = weight.toDoubleOrNull() ?: 0.0
+    weight = weight.toDoubleOrNull() ?: 0.0,
+    outside = outside.toIntOrNull() ?: 0,
 )
 
 fun Item.formatedPrice(): String {
@@ -117,5 +119,8 @@ fun Item.toItemDetails(): ItemDetails = ItemDetails(
     id = id,
     name = name,
     price = price.toString(),
-    quantity = quantity.toString()
+    quantity = quantity.toString(),
+    type = type.toString(),
+    weight = weight.toString(),
+    outside = outside.toString()
 )

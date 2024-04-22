@@ -16,8 +16,11 @@
 
 package com.example.inventory.ui.item
 
+import android.os.Build
+import androidx.annotation.RequiresApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -31,12 +34,17 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.inventory.InventoryTopAppBar
 import com.example.inventory.R
@@ -71,27 +79,28 @@ fun ItemEntryScreen(
             )
         }
     ) { innerPadding ->
-        ItemEntryBody(
-            itemUiState = viewModel.itemUiState,
-            onItemValueChange = viewModel::updateUiState,
-            onSaveClick = {
-                // Note: If the user rotates the screen very fast, the operation may get cancelled
-                // and the item may not be saved in the Database. This is because when config
-                // change occurs, the Activity will be recreated and the rememberCoroutineScope will
-                // be cancelled - since the scope is bound to composition.
-                coroutineScope.launch {
-                    viewModel.saveItem()
-                    navigateBack()
-                }
-            },
-            modifier = Modifier
-                .padding(innerPadding)
-                .verticalScroll(rememberScrollState())
-                .fillMaxWidth()
-        )
-    }
+            ItemEntryBody(
+                itemUiState = viewModel.itemUiState,
+                onItemValueChange = viewModel::updateUiState,
+                onSaveClick = {
+                    // Note: If the user rotates the screen very fast, the operation may get cancelled
+                    // and the item may not be saved in the Database. This is because when config
+                    // change occurs, the Activity will be recreated and the rememberCoroutineScope will
+                    // be cancelled - since the scope is bound to composition.
+                    coroutineScope.launch {
+                        viewModel.saveItem()
+                        navigateBack()
+                    }
+                },
+                modifier = Modifier
+                    .padding(innerPadding)
+                    .verticalScroll(rememberScrollState())
+                    .fillMaxWidth()
+            )
+        }
 }
 
+@RequiresApi(Build.VERSION_CODES.O)
 @Composable
 fun ItemEntryBody(
     itemUiState: ItemUiState,
@@ -99,12 +108,25 @@ fun ItemEntryBody(
     onSaveClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+
+    var selectedType by remember { mutableStateOf(itemUiState.itemDetails.type)}
     Column(
         modifier = modifier.padding(dimensionResource(id = R.dimen.padding_medium)),
         verticalArrangement = Arrangement.spacedBy(dimensionResource(id = R.dimen.padding_large))
     ) {
+        Row{
+            Button(onClick = { selectedType = "0"; onItemValueChange(itemUiState.itemDetails.copy(type = "0")) }) {
+                Text(text = "Climb")
+            }
+            Button(onClick = { selectedType = "1"; onItemValueChange(itemUiState.itemDetails.copy(type = "1"))  }) {
+                Text(text = "Hang")
+            }
+            Button(onClick = { selectedType = "2"; onItemValueChange(itemUiState.itemDetails.copy(type = "2"))  }) {
+                Text(text = "Pull")
+            }
+        }
         ItemInputForm(
-            itemDetails = itemUiState.itemDetails,
+            itemDetails = itemUiState.itemDetails.copy(type = selectedType),
             itemEdit = itemUiState.isEdit,
             onValueChange = onItemValueChange,
             modifier = Modifier.fillMaxWidth()
@@ -122,6 +144,7 @@ fun ItemEntryBody(
 
 
 
+@RequiresApi(Build.VERSION_CODES.O)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ItemInputForm(
@@ -149,35 +172,84 @@ fun ItemInputForm(
             enabled = enabled,
             singleLine = true
         )
-        OutlinedTextField(
-            value = itemDetails.price,
-            onValueChange = { onValueChange(itemDetails.copy(price = it)) },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            label = { Text(stringResource(R.string.grade)) },
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                unfocusedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                disabledContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-            ),
-            leadingIcon = { Text("V") },
-            modifier = Modifier.fillMaxWidth(),
-            enabled = enabled,
-            singleLine = true
-        )
-        OutlinedTextField(
-            value = itemDetails.quantity,
-            onValueChange = { onValueChange(itemDetails.copy(quantity = it)) },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            label = { Text(stringResource(R.string.quantity_req)) },
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                unfocusedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                disabledContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-            ),
-            modifier = Modifier.fillMaxWidth(),
-            enabled = enabled,
-            singleLine = true
-        )
+        if (itemDetails.type == "1"  || itemDetails.type == "2") {
+
+            OutlinedTextField(
+                value = itemDetails.weight,
+                onValueChange = { onValueChange(itemDetails.copy(weight = it)) },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                label = { Text(stringResource(R.string.weight)) },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    disabledContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                ),
+                leadingIcon = { Text("lbs") },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = enabled,
+                singleLine = true
+            )
+            OutlinedTextField(
+                value = itemDetails.quantity,
+                onValueChange = { onValueChange(itemDetails.copy(quantity = it)) },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                label = { Text(stringResource(R.string.reps)) },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    disabledContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                ),
+                modifier = Modifier.fillMaxWidth(),
+                enabled = enabled,
+                singleLine = true
+            )
+        } else if (itemDetails.type == "0") {
+            OutlinedTextField(
+                value = itemDetails.price,
+                onValueChange = { onValueChange(itemDetails.copy(price = it)) },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                label = { Text(stringResource(R.string.grade)) },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    disabledContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                ),
+                leadingIcon = { Text("V") },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = enabled,
+                singleLine = true
+            )
+            OutlinedTextField(
+                value = itemDetails.quantity,
+                onValueChange = { onValueChange(itemDetails.copy(quantity = it)) },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                label = { Text(stringResource(R.string.send)) },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    disabledContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                ),
+                modifier = Modifier.fillMaxWidth(),
+                enabled = enabled,
+                singleLine = true
+            )
+            OutlinedTextField(
+                value = itemDetails.outside,
+                onValueChange = { onValueChange(itemDetails.copy(outside = it)) },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                label = { Text(stringResource(R.string.outside)) },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    disabledContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                ),
+                modifier = Modifier.fillMaxWidth(),
+                enabled = enabled,
+                singleLine = true
+            )
+        } else {
+
+        }
         if (enabled) {
             Text(
                 text = stringResource(R.string.required_fields),
