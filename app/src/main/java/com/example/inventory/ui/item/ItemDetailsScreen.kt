@@ -211,7 +211,7 @@ fun ItemDetails(
                 )
             )
             ItemDetailsRow(
-                labelResID = R.string.quantity_in_stock,
+                labelResID = if(item.type == 0) {R.string.quantity_in_stock} else {R.string.reps },
                 itemDetail = item.quantity.toString(),
                 modifier = Modifier.padding(
                     horizontal = dimensionResource(

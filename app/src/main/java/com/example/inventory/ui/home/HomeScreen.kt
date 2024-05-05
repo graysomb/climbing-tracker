@@ -35,6 +35,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.twotone.Add
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -47,6 +48,9 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
@@ -157,6 +161,7 @@ fun HomeScreen(
 private fun HomeBody(
     itemList: List<Item>, onItemClick: (Int) -> Unit, modifier: Modifier = Modifier
 ) {
+    var chartType by remember { mutableStateOf(true) }
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = modifier
@@ -168,7 +173,14 @@ private fun HomeBody(
                 style = MaterialTheme.typography.titleLarge
             )
         } else {
-            ItemBarChart(itemList, Modifier.weight(1f))
+            Button(onClick = { chartType = !chartType }) {
+                Text(text = "Change Chart")
+            }
+            if (chartType) {
+                ItemBarChart(itemList, Modifier.weight(1f))
+            }else {
+                ItemBarChartHP(itemList, Modifier.weight(1f))
+            }
             InventoryList(
                 itemList = itemList,
                 onItemClick = { onItemClick(it.id) },
@@ -196,7 +208,7 @@ private fun InventoryList(
 private fun InventoryItem(
     item: Item, modifier: Modifier = Modifier
 ) {
-
+    val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
     Card(
         modifier = modifier, elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
@@ -208,14 +220,21 @@ private fun InventoryItem(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
-                    text = item.name,
+                    text = LocalDateTime.parse(item.name, formatter).format(DateTimeFormatter.ofPattern("MM-dd")),
                     style = MaterialTheme.typography.titleLarge,
                 )
                 Spacer(Modifier.weight(1f))
-                Text(
-                    text = stringResource(R.string.v, item.price),
-                    style = MaterialTheme.typography.titleMedium
-                )
+                if (item.type<1) {
+                    Text(
+                        text = stringResource(R.string.v, item.price),
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                }else{
+                    Text(
+                        text = stringResource(R.string.weight_val , item.weight.toInt()),
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                }
             }
             Row(modifier = modifier.fillMaxWidth()) {
                 fun typeCast(Type: Int): String {
@@ -347,6 +366,84 @@ fun ItemBarChart(itemList: List<Item>, modifier: Modifier = Modifier) {
 
     // ... rest of your Composable code (AndroidView, configuration, etc.)
     Text(text = "V Points", style = MaterialTheme.typography.titleMedium)
+    AndroidView(
+        modifier = Modifier
+            .fillMaxWidth()
+            .fillMaxHeight(.3f),
+        factory = { context ->
+            BarChart(context).apply {
+                // Configure chart appearance (axis labels, grid, etc.)
+                xAxis.textSize = 16f
+                //xAxis.textColor = MaterialTheme.colorScheme.primary.toArgb()
+                xAxis.textColor = android.graphics.Color.CYAN
+                xAxis.position = com.github.mikephil.charting.components.XAxis.XAxisPosition.BOTTOM
+                axisLeft.textSize = 16f
+                //xAxis.textColor = MaterialTheme.colorScheme.primary.toArgb()
+                axisLeft.textColor = android.graphics.Color.CYAN
+
+                data = barData
+                description.isEnabled = false // Disable description
+                legend.textSize=16f
+                legend.textColor = android.graphics.Color.CYAN
+
+                //legend.isEnabled = false // Disable legend
+                // ... other configurations
+
+                xAxis.valueFormatter = object : ValueFormatter() {
+                    override fun getFormattedValue(value: Float): String {
+                        val localDate = LocalDate.ofYearDay(LocalDate.now().year, value.toInt())
+                        val formatter = DateTimeFormatter.ofPattern("MM-dd")
+                        return localDate.format(formatter)
+                    }
+                }
+
+
+            }
+        },
+        update = { barChart ->
+            barChart.notifyDataSetChanged()
+            barChart.invalidate()
+        }
+    )
+}
+@RequiresApi(Build.VERSION_CODES.O)
+@Composable
+fun ItemBarChartHP(itemList: List<Item>, modifier: Modifier = Modifier) {
+    val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
+    val items = itemList
+
+    // Group items by day and calculate sums for each quantity category
+    val dailyQuantities = items.groupBy { item ->
+        LocalDateTime.parse(item.name, formatter).dayOfYear.toFloat()
+    }.mapValues { (_, itemsForDay) ->
+        val zeroQuantitySum = itemsForDay.filter { it.type > 1 }.sumOf { it.weight.toInt()*it.quantity }
+        val positiveQuantitySum = itemsForDay.filter { it.type > 0 }.sumOf { it.weight.toInt()*it.quantity }
+        listOf(zeroQuantitySum.toFloat(), positiveQuantitySum.toFloat())
+    }
+
+    // Create BarEntry lists for each quantity category
+    val zeroQuantityEntries = dailyQuantities.map { (day, sums) ->
+        BarEntry(day, sums[0])
+    }
+    val positiveQuantityEntries = dailyQuantities.map { (day, sums) ->
+        BarEntry(day, sums[1])
+    }
+
+    // Create BarDataSets with colors
+    val zeroQuantityDataSet = BarDataSet(zeroQuantityEntries, "Hangs").apply {
+        color = Color.CYAN
+    }
+    val positiveQuantityDataSet = BarDataSet(positiveQuantityEntries, "Pulls").apply {
+        color = Color.MAGENTA
+    }
+
+    // Create BarData and configure stacking
+    val barData = BarData(positiveQuantityDataSet,zeroQuantityDataSet,)
+    barData.isHighlightEnabled = false // Optional: disable highlighting
+    barData.setDrawValues(false)      // Optional: hide values on bars
+
+    // ... rest of your Composable code (AndroidView, configuration, etc.)
+    Text(text = "LBS Hanged/Lifted", style = MaterialTheme.typography.titleMedium)
     AndroidView(
         modifier = Modifier
             .fillMaxWidth()
