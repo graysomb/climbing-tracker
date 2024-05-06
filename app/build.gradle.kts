@@ -93,5 +93,7 @@ dependencies {
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
 
+    implementation("com.opencsv:opencsv:5.7.1")
+
 
 }
