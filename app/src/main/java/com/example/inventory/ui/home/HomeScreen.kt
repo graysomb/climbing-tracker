@@ -17,8 +17,10 @@
 package com.example.inventory.ui.home
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.graphics.Color
 import android.os.Build
+import android.os.Environment
 import androidx.annotation.RequiresApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -55,6 +57,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
@@ -73,6 +76,9 @@ import com.github.mikephil.charting.data.BarData
 import com.github.mikephil.charting.data.BarDataSet
 import com.github.mikephil.charting.data.BarEntry
 import com.github.mikephil.charting.formatter.ValueFormatter
+import com.opencsv.CSVWriter
+import java.io.File
+import java.io.FileWriter
 import java.text.SimpleDateFormat
 import java.time.Duration
 import java.time.Instant
@@ -162,6 +168,24 @@ private fun HomeBody(
     itemList: List<Item>, onItemClick: (Int) -> Unit, modifier: Modifier = Modifier
 ) {
     var chartType by remember { mutableStateOf(true) }
+
+
+    fun writeItemsToCsv(context: Context, items: List<Item>) {
+        val csvWriter = CSVWriter(FileWriter(File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "climb_data.csv")))
+        val header = arrayOf("id", "time", "grade", "send/reps", "type", "weight")
+        csvWriter.writeNext(header)
+
+        items.forEach { item ->
+            val row = arrayOf(item.id.toString(), item.name, item.price.toString(), item.quantity.toString(), item.type.toString(), item.weight.toString())
+            csvWriter.writeNext(row)
+        }
+
+        csvWriter.close()
+    }
+    val context = LocalContext.current
+
+
+
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = modifier
@@ -173,9 +197,14 @@ private fun HomeBody(
                 style = MaterialTheme.typography.titleLarge
             )
         } else {
+            Row {
             Button(onClick = { chartType = !chartType }) {
                 Text(text = "Change Chart")
             }
+            Button(onClick = { writeItemsToCsv(context, itemList) }) {
+                Text(text = "Export")
+            }
+        }
             if (chartType) {
                 ItemBarChart(itemList, Modifier.weight(1f))
             }else {

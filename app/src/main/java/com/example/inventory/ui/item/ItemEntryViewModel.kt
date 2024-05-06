@@ -61,6 +61,7 @@ class ItemEntryViewModel(private val itemsRepository: ItemsRepository) : ViewMod
             name.isNotBlank() && price.isNotBlank() && quantity.isNotBlank()
         }
     }
+
 }
 
 /**
