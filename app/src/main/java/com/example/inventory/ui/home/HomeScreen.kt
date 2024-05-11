@@ -86,6 +86,7 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.time.temporal.WeekFields
 import java.util.Date
 import java.util.Locale
 import kotlin.math.round
@@ -168,6 +169,7 @@ private fun HomeBody(
     itemList: List<Item>, onItemClick: (Int) -> Unit, modifier: Modifier = Modifier
 ) {
     var chartType by remember { mutableStateOf(true) }
+    var plotByWeek by remember { mutableStateOf(true) }
 
 
     fun writeItemsToCsv(context: Context, items: List<Item>) {
@@ -199,16 +201,27 @@ private fun HomeBody(
         } else {
             Row {
             Button(onClick = { chartType = !chartType }) {
-                Text(text = "Change Chart")
+                if (chartType) {
+                    Text(text = "V Points")
+                } else {
+                    Text(text = "LBS")
+                }
+            }
+            Button(onClick = { plotByWeek = !plotByWeek }) {
+                if (plotByWeek) {
+                    Text(text = "Week")
+                } else {
+                    Text(text = "Day")
+                }
             }
             Button(onClick = { writeItemsToCsv(context, itemList) }) {
                 Text(text = "Export")
             }
         }
             if (chartType) {
-                ItemBarChart(itemList, Modifier.weight(1f))
+                ItemBarChart(itemList, Modifier.weight(1f), plotByWeek)
             }else {
-                ItemBarChartHP(itemList, Modifier.weight(1f))
+                ItemBarChartHP(itemList, Modifier.weight(1f),plotByWeek)
             }
             InventoryList(
                 itemList = itemList,
@@ -359,16 +372,24 @@ fun ItemBarChart2(itemList: List<Item>, modifier: Modifier = Modifier) {
 
 @RequiresApi(Build.VERSION_CODES.O)
 @Composable
-fun ItemBarChart(itemList: List<Item>, modifier: Modifier = Modifier) {
+fun ItemBarChart(itemList: List<Item>, modifier: Modifier = Modifier, plotByWeek: Boolean) {
     val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
     val items = itemList
 
     // Group items by day and calculate sums for each quantity category
-    val dailyQuantities = items.groupBy { item ->
-        LocalDateTime.parse(item.name, formatter).dayOfYear.toFloat()
-    }.mapValues { (_, itemsForDay) ->
-        val zeroQuantitySum = itemsForDay.filter { it.quantity > 0 }.sumOf { it.price.toInt() }
-        val positiveQuantitySum = itemsForDay.filter { it.quantity > -1 }.sumOf { it.price.toInt() }
+    val groupedQuantities = if (plotByWeek) {
+        items.groupBy { item ->
+            LocalDateTime.parse(item.name, formatter).toLocalDate().get(WeekFields.of(Locale.getDefault()).weekOfYear()).toFloat()
+        }
+    } else {
+        items.groupBy { item ->
+            LocalDateTime.parse(item.name, formatter).dayOfYear.toFloat()
+        }
+    }
+
+    val dailyQuantities = groupedQuantities.mapValues { (_, itemsForPeriod) ->
+        val zeroQuantitySum = itemsForPeriod.filter { it.quantity > 0 }.sumOf { it.price.toInt() }
+        val positiveQuantitySum = itemsForPeriod.filter { it.quantity > -1 }.sumOf { it.price.toInt() }
         listOf(zeroQuantitySum.toFloat(), positiveQuantitySum.toFloat())
     }
 
@@ -394,7 +415,7 @@ fun ItemBarChart(itemList: List<Item>, modifier: Modifier = Modifier) {
     barData.setDrawValues(false)      // Optional: hide values on bars
 
     // ... rest of your Composable code (AndroidView, configuration, etc.)
-    Text(text = "V Points", style = MaterialTheme.typography.titleMedium)
+    //Text(text = "V Points", style = MaterialTheme.typography.titleMedium)
     AndroidView(
         modifier = Modifier
             .fillMaxWidth()
@@ -420,9 +441,13 @@ fun ItemBarChart(itemList: List<Item>, modifier: Modifier = Modifier) {
 
                 xAxis.valueFormatter = object : ValueFormatter() {
                     override fun getFormattedValue(value: Float): String {
-                        val localDate = LocalDate.ofYearDay(LocalDate.now().year, value.toInt())
-                        val formatter = DateTimeFormatter.ofPattern("MM-dd")
-                        return localDate.format(formatter)
+                        return if (plotByWeek) {
+                            "${value.toInt()}" // Display week number
+                        } else {
+                            val localDate = LocalDate.ofYearDay(LocalDate.now().year, value.toInt())
+                            val formatter = DateTimeFormatter.ofPattern("MM-dd")
+                            localDate.format(formatter)
+                        }
                     }
                 }
 
@@ -437,18 +462,29 @@ fun ItemBarChart(itemList: List<Item>, modifier: Modifier = Modifier) {
 }
 @RequiresApi(Build.VERSION_CODES.O)
 @Composable
-fun ItemBarChartHP(itemList: List<Item>, modifier: Modifier = Modifier) {
+fun ItemBarChartHP(itemList: List<Item>, modifier: Modifier = Modifier, plotByWeek: Boolean) {
     val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
     val items = itemList
 
     // Group items by day and calculate sums for each quantity category
-    val dailyQuantities = items.groupBy { item ->
-        LocalDateTime.parse(item.name, formatter).dayOfYear.toFloat()
-    }.mapValues { (_, itemsForDay) ->
-        val zeroQuantitySum = itemsForDay.filter { it.type > 1 }.sumOf { it.weight.toInt()*it.quantity }
-        val positiveQuantitySum = itemsForDay.filter { it.type > 0 }.sumOf { it.weight.toInt()*it.quantity }
+
+
+    val groupedQuantities = if (plotByWeek) {
+        items.groupBy { item ->
+            LocalDateTime.parse(item.name, formatter).toLocalDate().get(WeekFields.of(Locale.getDefault()).weekOfYear()).toFloat()
+        }
+    } else {
+        items.groupBy { item ->
+            LocalDateTime.parse(item.name, formatter).dayOfYear.toFloat()
+        }
+    }
+
+    val dailyQuantities = groupedQuantities.mapValues { (_, itemsForPeriod) ->
+        val zeroQuantitySum = itemsForPeriod.filter { it.type > 1 }.sumOf { it.weight.toInt()*it.quantity }
+        val positiveQuantitySum = itemsForPeriod.filter { it.type > 0 }.sumOf { it.weight.toInt()*it.quantity }
         listOf(zeroQuantitySum.toFloat(), positiveQuantitySum.toFloat())
     }
+
 
     // Create BarEntry lists for each quantity category
     val zeroQuantityEntries = dailyQuantities.map { (day, sums) ->
@@ -472,7 +508,7 @@ fun ItemBarChartHP(itemList: List<Item>, modifier: Modifier = Modifier) {
     barData.setDrawValues(false)      // Optional: hide values on bars
 
     // ... rest of your Composable code (AndroidView, configuration, etc.)
-    Text(text = "LBS Hanged/Lifted", style = MaterialTheme.typography.titleMedium)
+    //Text(text = "LBS Hanged/Lifted", style = MaterialTheme.typography.titleMedium)
     AndroidView(
         modifier = Modifier
             .fillMaxWidth()
@@ -498,9 +534,13 @@ fun ItemBarChartHP(itemList: List<Item>, modifier: Modifier = Modifier) {
 
                 xAxis.valueFormatter = object : ValueFormatter() {
                     override fun getFormattedValue(value: Float): String {
-                        val localDate = LocalDate.ofYearDay(LocalDate.now().year, value.toInt())
-                        val formatter = DateTimeFormatter.ofPattern("MM-dd")
-                        return localDate.format(formatter)
+                        return if (plotByWeek) {
+                            "${value.toInt()}" // Display week number
+                        } else {
+                            val localDate = LocalDate.ofYearDay(LocalDate.now().year, value.toInt())
+                            val formatter = DateTimeFormatter.ofPattern("MM-dd")
+                            localDate.format(formatter)
+                        }
                     }
                 }
 
