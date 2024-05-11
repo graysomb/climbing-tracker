@@ -169,7 +169,7 @@ private fun HomeBody(
     itemList: List<Item>, onItemClick: (Int) -> Unit, modifier: Modifier = Modifier
 ) {
     var chartType by remember { mutableStateOf(true) }
-    var plotByWeek by remember { mutableStateOf(true) }
+    var plotByWeek by remember { mutableStateOf(false) }
 
 
     fun writeItemsToCsv(context: Context, items: List<Item>) {
