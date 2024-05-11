@@ -22,8 +22,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.example.inventory.data.Item
 import com.example.inventory.data.ItemsRepository
+import kotlinx.coroutines.launch
 import java.text.NumberFormat
 import java.time.LocalDateTime
 
@@ -35,6 +37,8 @@ class ItemEntryViewModel(private val itemsRepository: ItemsRepository) : ViewMod
     /**
      * Holds current item ui state
      */
+
+    
     var itemUiState by mutableStateOf(ItemUiState())
         private set
 
@@ -42,6 +46,27 @@ class ItemEntryViewModel(private val itemsRepository: ItemsRepository) : ViewMod
      * Updates the [itemUiState] with the value provided in the argument. This method also triggers
      * a validation for input values.
      */
+
+    fun fetchLastItem() {
+        viewModelScope.launch {
+            itemsRepository.getLastItemStream().collect { item ->
+                // Update itemUiState with the last item's details
+                //itemUiState = item.toItemUiState(isEdit = false)
+                var lastItemDetails = item.toItemDetails()
+                var currentItemDetails = itemUiState.itemDetails
+                var comboItemDetails = ItemDetails(
+                    id = currentItemDetails.id,
+                    name = currentItemDetails.name,
+                    price = lastItemDetails.price,
+                    quantity = lastItemDetails.quantity,
+                    type = lastItemDetails.type,
+                    weight = lastItemDetails.weight,
+                    outside = lastItemDetails.outside
+                )
+                itemUiState = ItemUiState( comboItemDetails, isEntryValid = true, isEdit = false)
+            }
+        }
+    }
     fun updateUiState(itemDetails: ItemDetails) {
         itemUiState =
             ItemUiState(itemDetails = itemDetails, isEntryValid = validateInput(itemDetails))
@@ -61,6 +86,17 @@ class ItemEntryViewModel(private val itemsRepository: ItemsRepository) : ViewMod
             name.isNotBlank() && price.isNotBlank() && quantity.isNotBlank()
         }
     }
+
+/*    private fun validateInput(uiState: ItemDetails = itemUiState.itemDetails): Boolean {
+        return with(uiState) {
+            name.isNotBlank() &&
+                    when (type.toIntOrNull()) {
+                        0 -> price.isNotBlank() && quantity.isNotBlank() && outside.isNotBlank() // Climbing
+                        1, 2 -> weight.isNotBlank() && quantity.isNotBlank() // Hanging/Pulling
+                        else -> false // Invalid type
+                    }
+        }
+    }*/
 
 }
 
