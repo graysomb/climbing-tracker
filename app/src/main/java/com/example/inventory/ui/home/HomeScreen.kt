@@ -459,10 +459,10 @@ fun ItemBarChartHP(itemList: List<Item>, modifier: Modifier = Modifier) {
     }
 
     // Create BarDataSets with colors
-    val zeroQuantityDataSet = BarDataSet(zeroQuantityEntries, "Hangs").apply {
+    val zeroQuantityDataSet = BarDataSet(zeroQuantityEntries, "Pulls").apply {
         color = Color.CYAN
     }
-    val positiveQuantityDataSet = BarDataSet(positiveQuantityEntries, "Pulls").apply {
+    val positiveQuantityDataSet = BarDataSet(positiveQuantityEntries, "Hangs").apply {
         color = Color.MAGENTA
     }
 
