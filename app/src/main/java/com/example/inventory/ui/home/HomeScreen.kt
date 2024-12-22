@@ -17,10 +17,15 @@
 package com.example.inventory.ui.home
 
 import android.annotation.SuppressLint
+import android.content.ContentUris
+import android.content.ContentValues
 import android.content.Context
 import android.graphics.Color
+import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.provider.MediaStore
+import android.widget.Toast
 import androidx.annotation.RequiresApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -65,6 +70,8 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.room.Room
+import androidx.room.RoomDatabase
 import com.example.inventory.InventoryTopAppBar
 import com.example.inventory.R
 import com.example.inventory.data.Item
@@ -79,6 +86,8 @@ import com.github.mikephil.charting.formatter.ValueFormatter
 import com.opencsv.CSVWriter
 import java.io.File
 import java.io.FileWriter
+import java.io.IOException
+import java.io.OutputStreamWriter
 import java.text.SimpleDateFormat
 import java.time.Duration
 import java.time.Instant
@@ -89,6 +98,7 @@ import java.time.format.DateTimeFormatter
 import java.time.temporal.WeekFields
 import java.util.Date
 import java.util.Locale
+import kotlin.concurrent.read
 import kotlin.math.round
 
 
@@ -173,20 +183,54 @@ private fun HomeBody(
 
 
     fun writeItemsToCsv(context: Context, items: List<Item>) {
-        val csvWriter = CSVWriter(FileWriter(File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "climb_data.csv")))
-        val header = arrayOf("id", "time", "grade", "send/reps", "type", "weight")
-        csvWriter.writeNext(header)
-
-        items.forEach { item ->
-            val row = arrayOf(item.id.toString(), item.name, item.price.toString(), item.quantity.toString(), item.type.toString(), item.weight.toString())
-            csvWriter.writeNext(row)
+        val resolver = context.contentResolver
+        val contentValues = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, "climb_data.csv")
+            put(MediaStore.MediaColumns.MIME_TYPE, "text/csv")
+            put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
         }
 
-        csvWriter.close()
+        val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+
+        uri?.let {
+            resolver.openOutputStream(it)?.use { outputStream ->
+                OutputStreamWriter(outputStream).use { writer ->
+                    val csvWriter = CSVWriter(writer)
+                    val header = arrayOf("id", "time", "grade", "send/reps", "type", "weight")
+                    csvWriter.writeNext(header)
+
+                    items.forEach { item ->
+                        val row = arrayOf(item.id.toString(), item.name, item.price.toString(), item.quantity.toString(), item.type.toString(), item.weight.toString())
+                        csvWriter.writeNext(row)
+                    }
+
+                    csvWriter.close()
+                }
+            }
+        }
     }
     val context = LocalContext.current
 
+    fun backupDatabaseToDownloads(context: Context) {
+        val dbFile = context.getDatabasePath("item_database")
 
+        val resolver = context.contentResolver
+        val contentValues = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, "my_database_backup.db")
+            put(MediaStore.MediaColumns.MIME_TYPE, "application/octet-stream")
+            put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+        }
+
+        val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+
+        uri?.let {
+            resolver.openOutputStream(it)?.use { outputStream ->
+                dbFile.inputStream().use { inputStream ->
+                    inputStream.copyTo(outputStream)
+                }
+            }
+        }
+    }
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -216,6 +260,9 @@ private fun HomeBody(
             }
             Button(onClick = { writeItemsToCsv(context, itemList) }) {
                 Text(text = "Export")
+            }
+            Button(onClick = { backupDatabaseToDownloads( context) }) {
+                Text(text = "Backup")
             }
         }
             if (chartType) {
@@ -410,7 +457,7 @@ fun ItemBarChart(itemList: List<Item>, modifier: Modifier = Modifier, plotByWeek
     }
 
     // Create BarData and configure stacking
-    val barData = BarData(positiveQuantityDataSet,zeroQuantityDataSet,)
+    val barData = BarData(positiveQuantityDataSet, zeroQuantityDataSet)
     barData.isHighlightEnabled = false // Optional: disable highlighting
     barData.setDrawValues(false)      // Optional: hide values on bars
 
@@ -503,7 +550,7 @@ fun ItemBarChartHP(itemList: List<Item>, modifier: Modifier = Modifier, plotByWe
     }
 
     // Create BarData and configure stacking
-    val barData = BarData(positiveQuantityDataSet,zeroQuantityDataSet,)
+    val barData = BarData(positiveQuantityDataSet, zeroQuantityDataSet)
     barData.isHighlightEnabled = false // Optional: disable highlighting
     barData.setDrawValues(false)      // Optional: hide values on bars
 
