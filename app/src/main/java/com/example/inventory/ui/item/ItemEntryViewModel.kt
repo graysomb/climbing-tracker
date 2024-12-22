@@ -50,20 +50,25 @@ class ItemEntryViewModel(private val itemsRepository: ItemsRepository) : ViewMod
     fun fetchLastItem() {
         viewModelScope.launch {
             itemsRepository.getLastItemStream().collect { item ->
-                // Update itemUiState with the last item's details
-                //itemUiState = item.toItemUiState(isEdit = false)
-                var lastItemDetails = item.toItemDetails()
-                var currentItemDetails = itemUiState.itemDetails
-                var comboItemDetails = ItemDetails(
-                    id = currentItemDetails.id,
-                    name = currentItemDetails.name,
-                    price = lastItemDetails.price,
-                    quantity = lastItemDetails.quantity,
-                    type = lastItemDetails.type,
-                    weight = lastItemDetails.weight,
-                    outside = lastItemDetails.outside
-                )
-                itemUiState = ItemUiState( comboItemDetails, isEntryValid = true, isEdit = false)
+                if (item != null) { // Add null check
+                    // Update itemUiState with the last item's details
+                    var lastItemDetails = item.toItemDetails()
+                    var currentItemDetails = itemUiState.itemDetails
+                    var comboItemDetails = ItemDetails(
+                        id = currentItemDetails.id,
+                        name = currentItemDetails.name,
+                        price = lastItemDetails.price,
+                        quantity = lastItemDetails.quantity,
+                        type = lastItemDetails.type,
+                        weight = lastItemDetails.weight,
+                        outside = lastItemDetails.outside
+                    )
+                    itemUiState = ItemUiState(comboItemDetails, isEntryValid = true, isEdit = false)
+                } else {
+                    // Handle the case where item is null, e.g., show an error message or use default values
+                    // For example:
+                    // itemUiState = ItemUiState(ItemDetails(), isEntryValid = false, isEdit = false)
+                }
             }
         }
     }
