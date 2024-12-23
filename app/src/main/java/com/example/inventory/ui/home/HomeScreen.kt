@@ -268,7 +268,7 @@ private fun HomeBody(
             if (chartType) {
                 ItemBarChart(itemList, Modifier.weight(1f), plotByWeek)
             }else {
-                ItemBarChartHP(itemList, Modifier.weight(1f),plotByWeek)
+                ItemBarChartHP(itemList, Modifier.weight(1f), plotByWeek)
             }
             InventoryList(
                 itemList = itemList,
@@ -421,15 +421,30 @@ fun ItemBarChart2(itemList: List<Item>, modifier: Modifier = Modifier) {
 @Composable
 fun ItemBarChart(itemList: List<Item>, modifier: Modifier = Modifier, plotByWeek: Boolean) {
     val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
-    val items = itemList
+    val currentDate = LocalDate.now()
 
-    // Group items by day and calculate sums for each quantity category
+    // Filter items based on the desired time range
+    val filteredItems = if (plotByWeek) {
+        val oneYearAgo = currentDate.minusYears(1)
+        itemList.filter { item ->
+            val itemDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
+            !itemDate.isBefore(oneYearAgo) && !itemDate.isAfter(currentDate)
+        }
+    } else {
+        val threeMonthsAgo = currentDate.minusMonths(3)
+        itemList.filter { item ->
+            val itemDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
+            !itemDate.isBefore(threeMonthsAgo) && !itemDate.isAfter(currentDate)
+        }
+    }
+
+    // Group items by week or day
     val groupedQuantities = if (plotByWeek) {
-        items.groupBy { item ->
+        filteredItems.groupBy { item ->
             LocalDateTime.parse(item.name, formatter).toLocalDate().get(WeekFields.of(Locale.getDefault()).weekOfYear()).toFloat()
         }
     } else {
-        items.groupBy { item ->
+        filteredItems.groupBy { item ->
             LocalDateTime.parse(item.name, formatter).dayOfYear.toFloat()
         }
     }
@@ -461,35 +476,27 @@ fun ItemBarChart(itemList: List<Item>, modifier: Modifier = Modifier, plotByWeek
     barData.isHighlightEnabled = false // Optional: disable highlighting
     barData.setDrawValues(false)      // Optional: hide values on bars
 
-    // ... rest of your Composable code (AndroidView, configuration, etc.)
-    //Text(text = "V Points", style = MaterialTheme.typography.titleMedium)
     AndroidView(
         modifier = Modifier
             .fillMaxWidth()
             .fillMaxHeight(.3f),
         factory = { context ->
             BarChart(context).apply {
-                // Configure chart appearance (axis labels, grid, etc.)
                 xAxis.textSize = 16f
-                //xAxis.textColor = MaterialTheme.colorScheme.primary.toArgb()
                 xAxis.textColor = android.graphics.Color.CYAN
                 xAxis.position = com.github.mikephil.charting.components.XAxis.XAxisPosition.BOTTOM
                 axisLeft.textSize = 16f
-                //xAxis.textColor = MaterialTheme.colorScheme.primary.toArgb()
                 axisLeft.textColor = android.graphics.Color.CYAN
 
                 data = barData
                 description.isEnabled = false // Disable description
-                legend.textSize=16f
+                legend.textSize = 16f
                 legend.textColor = android.graphics.Color.CYAN
-
-                //legend.isEnabled = false // Disable legend
-                // ... other configurations
 
                 xAxis.valueFormatter = object : ValueFormatter() {
                     override fun getFormattedValue(value: Float): String {
                         return if (plotByWeek) {
-                            "${value.toInt()}" // Display week number
+                            "Week ${value.toInt()}"
                         } else {
                             val localDate = LocalDate.ofYearDay(LocalDate.now().year, value.toInt())
                             val formatter = DateTimeFormatter.ofPattern("MM-dd")
@@ -497,8 +504,6 @@ fun ItemBarChart(itemList: List<Item>, modifier: Modifier = Modifier, plotByWeek
                         }
                     }
                 }
-
-
             }
         },
         update = { barChart ->
@@ -507,15 +512,14 @@ fun ItemBarChart(itemList: List<Item>, modifier: Modifier = Modifier, plotByWeek
         }
     )
 }
+
 @RequiresApi(Build.VERSION_CODES.O)
 @Composable
 fun ItemBarChartHP(itemList: List<Item>, modifier: Modifier = Modifier, plotByWeek: Boolean) {
     val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
     val items = itemList
 
-    // Group items by day and calculate sums for each quantity category
-
-
+    // Group items by day and calculate maximum values for each quantity category
     val groupedQuantities = if (plotByWeek) {
         items.groupBy { item ->
             LocalDateTime.parse(item.name, formatter).toLocalDate().get(WeekFields.of(Locale.getDefault()).weekOfYear()).toFloat()
@@ -527,18 +531,17 @@ fun ItemBarChartHP(itemList: List<Item>, modifier: Modifier = Modifier, plotByWe
     }
 
     val dailyQuantities = groupedQuantities.mapValues { (_, itemsForPeriod) ->
-        val zeroQuantitySum = itemsForPeriod.filter { it.type > 1 }.sumOf { it.weight.toInt()*it.quantity }
-        val positiveQuantitySum = itemsForPeriod.filter { it.type > 0 }.sumOf { it.weight.toInt()*it.quantity }
-        listOf(zeroQuantitySum.toFloat(), positiveQuantitySum.toFloat())
+        val zeroQuantityMax = itemsForPeriod.filter { it.type == 0 }.maxOfOrNull { it.weight.toInt() * it.quantity }?.toFloat() ?: 0f
+        val positiveQuantityMax = itemsForPeriod.filter { it.type == 1 }.maxOfOrNull { it.weight.toInt() * it.quantity }?.toFloat() ?: 0f
+        listOf(zeroQuantityMax, positiveQuantityMax)
     }
-
 
     // Create BarEntry lists for each quantity category
-    val zeroQuantityEntries = dailyQuantities.map { (day, sums) ->
-        BarEntry(day, sums[0])
+    val zeroQuantityEntries = dailyQuantities.map { (day, maxValues) ->
+        BarEntry(day, maxValues[0])
     }
-    val positiveQuantityEntries = dailyQuantities.map { (day, sums) ->
-        BarEntry(day, sums[1])
+    val positiveQuantityEntries = dailyQuantities.map { (day, maxValues) ->
+        BarEntry(day, maxValues[1])
     }
 
     // Create BarDataSets with colors
@@ -555,7 +558,6 @@ fun ItemBarChartHP(itemList: List<Item>, modifier: Modifier = Modifier, plotByWe
     barData.setDrawValues(false)      // Optional: hide values on bars
 
     // ... rest of your Composable code (AndroidView, configuration, etc.)
-    //Text(text = "LBS Hanged/Lifted", style = MaterialTheme.typography.titleMedium)
     AndroidView(
         modifier = Modifier
             .fillMaxWidth()
@@ -564,20 +566,15 @@ fun ItemBarChartHP(itemList: List<Item>, modifier: Modifier = Modifier, plotByWe
             BarChart(context).apply {
                 // Configure chart appearance (axis labels, grid, etc.)
                 xAxis.textSize = 16f
-                //xAxis.textColor = MaterialTheme.colorScheme.primary.toArgb()
                 xAxis.textColor = android.graphics.Color.CYAN
                 xAxis.position = com.github.mikephil.charting.components.XAxis.XAxisPosition.BOTTOM
                 axisLeft.textSize = 16f
-                //xAxis.textColor = MaterialTheme.colorScheme.primary.toArgb()
                 axisLeft.textColor = android.graphics.Color.CYAN
 
                 data = barData
                 description.isEnabled = false // Disable description
-                legend.textSize=16f
+                legend.textSize = 16f
                 legend.textColor = android.graphics.Color.CYAN
-
-                //legend.isEnabled = false // Disable legend
-                // ... other configurations
 
                 xAxis.valueFormatter = object : ValueFormatter() {
                     override fun getFormattedValue(value: Float): String {
@@ -590,8 +587,6 @@ fun ItemBarChartHP(itemList: List<Item>, modifier: Modifier = Modifier, plotByWe
                         }
                     }
                 }
-
-
             }
         },
         update = { barChart ->
@@ -600,6 +595,7 @@ fun ItemBarChartHP(itemList: List<Item>, modifier: Modifier = Modifier, plotByWe
         }
     )
 }
+
 
 @Preview(showBackground = true)
 @Composable
