@@ -51,7 +51,7 @@ abstract class InventoryDatabase : RoomDatabase() {
         fun getDatabase(context: Context): InventoryDatabase {
             // if the Instance is not null, return it, otherwise create a new database instance.
             return Instance ?: synchronized(this) {
-                Room.databaseBuilder(context, InventoryDatabase::class.java, "item_database").createFromAsset("database/item_database.db")
+                Room.databaseBuilder(context, InventoryDatabase::class.java, "item_database")//.createFromAsset("database/item_database.db")
                     /**
                      * Setting this option in your app's database builder means that Room
                      * permanently deletes all data from the tables in your database when it
