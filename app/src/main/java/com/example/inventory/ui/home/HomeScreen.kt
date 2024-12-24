@@ -182,11 +182,12 @@ private fun HomeBody(
 ) {
     var chartIndex by remember { mutableStateOf(0) }
     var plotByWeek by remember { mutableStateOf(false) }
+    var integerState by remember { mutableStateOf(0) } // New state variable for integer cycling
 
     val chartFunctions = listOf<@Composable (List<Item>, Modifier) -> Unit>(
         { items, modifier -> ItemBarChart(items, modifier, plotByWeek) },
         { items, modifier -> ItemBarChartHP(items, modifier, plotByWeek) },
-        { items, _ -> ItemBarChartProb(items) }
+        { items, modifier -> ItemBarChartProb(items, modifier, integerState) } // Pass the new state variable
     )
 
     fun writeItemsToCsv(context: Context, items: List<Item>) { /* Existing logic */ }
@@ -222,8 +223,15 @@ private fun HomeBody(
                 Button(onClick = { backupDatabaseToDownloads(context) }) {
                     Text(text = "Backup")
                 }
+                // New button for cycling integer state
+
             }
             chartFunctions[chartIndex](itemList, Modifier.weight(1f))
+            if (chartIndex == 2) { // Only show this button when ItemBarChartProb is visible
+                Button(onClick = { integerState = (integerState + 1) % 3 }) {
+                    Text(text = "Cycle State: $integerState")
+                }
+            }
             InventoryList(
                 itemList = itemList,
                 onItemClick = { onItemClick(it.id) },
@@ -232,6 +240,7 @@ private fun HomeBody(
         }
     }
 }
+
 
 
 @Composable
@@ -309,7 +318,7 @@ private fun InventoryItem(
 
 @RequiresApi(Build.VERSION_CODES.O)
 @Composable
-fun ItemBarChartProb(itemList: List<Item>, modifier: Modifier = Modifier) {
+fun ItemBarChartProb(itemList: List<Item>, modifier: Modifier = Modifier, integerState: Int) {
     // Group items by price
     val groupedByPrice = itemList.groupBy { it.price }
 
@@ -317,7 +326,9 @@ fun ItemBarChartProb(itemList: List<Item>, modifier: Modifier = Modifier) {
     val priceFractions = groupedByPrice.mapValues { (_, items) ->
         val sends = items.count { it.quantity > 0 }
         val attempts = items.count { it.quantity <= 0 }
-        if (sends + attempts > 0) sends.toFloat()  else 0f
+        if (sends + attempts > 0 && integerState == 0) sends.toFloat()/(sends+attempts) else
+        if (sends + attempts > 0 && integerState == 1) sends.toFloat() else
+        if (sends + attempts > 0 && integerState == 2) (sends.toFloat()+attempts.toFloat())  else 0f
     }
 
     // Create BarEntry list for fractions
@@ -337,7 +348,7 @@ fun ItemBarChartProb(itemList: List<Item>, modifier: Modifier = Modifier) {
 
     // Render the bar chart
     AndroidView(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxWidth()
             .fillMaxHeight(.3f),
         factory = { context ->
