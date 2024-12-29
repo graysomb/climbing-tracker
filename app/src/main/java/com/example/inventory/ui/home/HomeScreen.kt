@@ -79,9 +79,14 @@ import com.example.inventory.ui.AppViewModelProvider
 import com.example.inventory.ui.navigation.NavigationDestination
 import com.example.inventory.ui.theme.InventoryTheme
 import com.github.mikephil.charting.charts.BarChart
+import com.github.mikephil.charting.charts.CombinedChart
 import com.github.mikephil.charting.data.BarData
 import com.github.mikephil.charting.data.BarDataSet
 import com.github.mikephil.charting.data.BarEntry
+import com.github.mikephil.charting.data.CombinedData
+import com.github.mikephil.charting.data.Entry
+import com.github.mikephil.charting.data.LineData
+import com.github.mikephil.charting.data.LineDataSet
 import com.github.mikephil.charting.formatter.ValueFormatter
 import com.opencsv.CSVWriter
 import java.io.File
@@ -98,10 +103,12 @@ import java.time.format.DateTimeFormatter
 import java.time.temporal.WeekFields
 import java.util.Date
 import java.util.Locale
+import kotlin.collections.toDoubleArray
 import kotlin.concurrent.read
 import kotlin.math.log10
 import kotlin.math.round
-
+import kotlin.text.toDouble
+import com.example.inventory.ui.home.LogisticFitter
 
 object HomeDestination : NavigationDestination {
     override val route = "home"
@@ -183,13 +190,14 @@ private fun HomeBody(
     var chartIndex by remember { mutableStateOf(0) }
     var plotByWeek by remember { mutableStateOf(false) }
     var integerState by remember { mutableStateOf(0) } // New state variable for integer cycling
+    var moFilt by remember { mutableStateOf(0) }
 
     val chartFunctions = listOf<@Composable (List<Item>, Modifier) -> Unit>(
         { items, modifier -> ItemBarChart(items, modifier, plotByWeek) },
         { items, modifier -> ItemBarChartHP(items, modifier, plotByWeek) },
-        { items, modifier -> ItemBarChartProb(items, modifier, 0) },
-        { items, modifier -> ItemBarChartProb(items, modifier, 1) },
-        { items, modifier -> ItemBarChartProb(items, modifier, 2) }// Pass the new state variable
+        { items, modifier -> ItemBarChartProb(items, modifier, 0, moFilt) },
+        { items, modifier -> ItemBarChartProb(items, modifier, 1, moFilt) },
+        { items, modifier -> ItemBarChartProb(items, modifier, 2, moFilt) }// Pass the new state variable
     )
 
     fun writeItemsToCsv(context: Context, items: List<Item>) { /* Existing logic */ }
@@ -229,11 +237,14 @@ private fun HomeBody(
 
             }
             chartFunctions[chartIndex](itemList, Modifier.weight(1f))
-            /*if (chartIndex == 2) { // Only show this button when ItemBarChartProb is visible
-                Button(onClick = { integerState = (integerState + 1) % 3 }) {
-                    Text(text = "Cycle State: $integerState")
+            if (chartIndex >= 2) { // Only show this button when ItemBarChartProb is visible
+                Button(onClick = { moFilt = (moFilt + 1) % 2 }) {
+                    Text(when (moFilt) {
+                        0 -> "all time"
+                        else -> "last 3 months"
+                    })
                 }
-            }*/
+            }
             InventoryList(
                 itemList = itemList,
                 onItemClick = { onItemClick(it.id) },
@@ -320,65 +331,136 @@ private fun InventoryItem(
 
 @RequiresApi(Build.VERSION_CODES.O)
 @Composable
-fun ItemBarChartProb(itemList: List<Item>, modifier: Modifier = Modifier, integerState: Int) {
+fun ItemBarChartProb2(itemList: List<Item>, modifier: Modifier = Modifier, integerState: Int, moFilt: Int) {
     val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
     val currentDate = LocalDate.now()
-    // Filter items based on the desired time range
     val threeMonthsAgo = currentDate.minusMonths(3)
+
     val filteredItems = itemList.filter { item ->
-            val itemDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
-            !itemDate.isBefore(threeMonthsAgo) && !itemDate.isAfter(currentDate)
-        }
-
-
-    // Group items by price
-    val groupedByPrice = filteredItems.groupBy { it.price }
-
-    // Calculate fraction of sends/(attempts + sends) for each price group
-    val priceFractions = groupedByPrice.mapValues { (_, items) ->
-        val sends = items.count { it.quantity > 0 }
-        val attempts = items.count { it.quantity <= 0 }
-        if (sends + attempts > 0 && integerState == 0) sends.toFloat()/(sends+attempts) else
-        if (sends + attempts > 0 && integerState == 1) sends.toFloat() else
-        if (sends + attempts > 0 && integerState == 2) (sends.toFloat()+attempts.toFloat())  else 0f
+        val itemDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
+        !itemDate.isBefore(threeMonthsAgo) && !itemDate.isAfter(currentDate)
     }
 
-    // Create BarEntry list for fractions
+    var groupedByPrice = filteredItems.groupBy { it.price }
+
+    if (moFilt == 0) {
+        groupedByPrice = itemList.groupBy { it.price }
+    }
+
+
+    val priceFractions = groupedByPrice.mapValues { (_, items) ->
+        val sends = items.count { it.quantity > 0 }
+        val sendsV = items.filter{ it.quantity > 0 }.sumOf{it.price.toInt()}
+        val attempts = items.count { it.quantity <= 0 }
+        when (integerState) {
+            0 -> if (sends + attempts > 0) sends.toFloat() / (sends + attempts) else 0f
+            1 -> sendsV.toFloat()
+            2 -> (sends + attempts).toFloat()
+            else -> 0f
+        }
+    }
+
     val fractionEntries = priceFractions.map { (price, fraction) ->
         BarEntry(price.toFloat(), fraction)
     }
-    val txt = "Fraction of Sends"
-    if (integerState==1) {
-        val txt = "Total Sends"
+    val txt = when (integerState) {
+        1 -> "V Points Sent Per Grade"
+        2 -> "Total Attempts"
+        else -> "Probability of Sends Per Grade"
     }
-    if (integerState==2) {
-        val txt = "Total Attempts"
-    }
-    // Create BarDataSet with colors
+
     val fractionDataSet = BarDataSet(fractionEntries, txt).apply {
         color = Color.CYAN
     }
 
-    // Create BarData and configure it
-    val barData = BarData(fractionDataSet)
-    barData.isHighlightEnabled = false // Optional: disable highlighting
-    barData.setDrawValues(false)      // Optional: hide values on bars
+    val filteredItemsDay = itemList
+    // Group items by week or day
+    val groupedQuantities =
+        filteredItemsDay.groupBy { item ->
+            LocalDateTime.parse(item.name, formatter).dayOfYear.toFloat()
+        }
 
-    // Render the bar chart
+    val dailyQuantities = groupedQuantities.mapValues { (_, itemsForPeriod) ->
+        val zeroQuantitySum = itemsForPeriod.filter { it.quantity > 0 }.sumOf { it.price.toInt() }
+        val positiveQuantitySum = itemsForPeriod.filter { it.quantity == 0 }.sumOf { it.price.toInt() }
+        listOf(zeroQuantitySum.toFloat(),positiveQuantitySum.toFloat()) // maybe add a multiplier for no sends
+    }
+    val sends = dailyQuantities.values.sumOf { it[0].toDouble() }
+    val trys = dailyQuantities.values.sumOf { it[1].toDouble() }
+    val count = dailyQuantities.size
+    var minVariance = Float.MAX_VALUE
+
+    val startA = 0f // Starting point of the search for 'a'
+    val endA = 10.0f // Ending point of the search for 'a'
+    val step = 0.01f // Step size for 'a'
+
+    val optimalA = generateSequence(startA) { prev ->
+        if (prev + step <= endA) prev + step else null
+    }.minOfOrNull { coefficientA ->
+        val variance = sends.toFloat() + trys.toFloat() / coefficientA
+        variance
+    } ?: startA // Handle case where range is empty
+
+    val meanVPerDay = (sends.toFloat() +trys.toFloat() / optimalA)/count
+
+    
+
+    val barData = BarData(fractionDataSet)
+    barData.isHighlightEnabled = false
+    barData.setDrawValues(false)
+
+    // Fit the data to c / (exp((x - a) / b) + 1) using least squares
+    val xValues = priceFractions.keys.map { it.toFloat() }
+    val yValues = priceFractions.values.toList()
+    val fitEntries = mutableListOf<Entry>()
+
+    if (xValues.isNotEmpty() && yValues.isNotEmpty() && integerState==0) {
+        val initialA = xValues.average().toFloat()
+        val initialB = (xValues.maxOrNull()!! - xValues.minOrNull()!!) / 8
+        val initialC = yValues.maxOrNull() ?: 1f
+
+        // Convert Kotlin collections to Java arrays
+        val xValuesJava = xValues.map { it.toDouble() }.toDoubleArray()
+        val yValuesJava = yValues.map { it.toDouble() }.toDoubleArray()
+
+        // Perform least squares fitting using the Java class LogisticFitter
+        val parameters = LogisticFitter.fitLogistic(xValuesJava, yValuesJava)
+        val (a, b, c) = (parameters.toList())
+
+        xValues.sorted().forEach { x ->
+            val y = a / (Math.exp((-b*(x - c)).toDouble()) + 1).toFloat()
+            fitEntries.add(Entry(x, y.toFloat()))
+        }
+    }
+
+    val lineDataSet = LineDataSet(fitEntries, "Fit Curve").apply {
+        color = android.graphics.Color.MAGENTA
+        setDrawCircles(false)
+        lineWidth = 2f
+        valueTextColor = android.graphics.Color.MAGENTA
+        valueTextSize = 12f
+    }
+
+    val lineData = LineData(lineDataSet)
+
     AndroidView(
         modifier = Modifier
             .fillMaxWidth()
             .fillMaxHeight(.3f),
         factory = { context ->
-            BarChart(context).apply {
+            CombinedChart(context).apply {
                 xAxis.textSize = 16f
                 xAxis.textColor = android.graphics.Color.CYAN
                 xAxis.position = com.github.mikephil.charting.components.XAxis.XAxisPosition.BOTTOM
                 axisLeft.textSize = 16f
                 axisLeft.textColor = android.graphics.Color.CYAN
 
-                data = barData
-                description.isEnabled = false // Disable description
+                data = CombinedData().apply {
+                    setData(barData)
+                    setData(lineData)
+                }
+
+                description.isEnabled = false
                 legend.textSize = 16f
                 legend.textColor = android.graphics.Color.CYAN
 
@@ -396,6 +478,122 @@ fun ItemBarChartProb(itemList: List<Item>, modifier: Modifier = Modifier, intege
     )
 }
 
+@RequiresApi(Build.VERSION_CODES.O)
+@Composable
+fun ItemBarChartProb(itemList: List<Item>, modifier: Modifier = Modifier, integerState: Int, moFilt: Int) {
+    val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
+    val currentDate = LocalDate.now()
+    val threeMonthsAgo = currentDate.minusMonths(3)
+
+    val filteredItems = itemList.filter { item ->
+        val itemDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
+        !itemDate.isBefore(threeMonthsAgo) && !itemDate.isAfter(currentDate)
+    }
+
+    var groupedByPrice = filteredItems.groupBy { it.price }
+
+    if (moFilt == 0) {
+        groupedByPrice = itemList.groupBy { it.price }
+    }
+
+
+    val priceFractions = groupedByPrice.mapValues { (_, items) ->
+        val sends = items.count { it.quantity > 0 }
+        val sendsV = items.filter{ it.quantity > 0 }.sumOf{it.price.toInt()}
+        val attempts = items.count { it.quantity <= 0 }
+        when (integerState) {
+            0 -> if (sends + attempts > 0) sends.toFloat() / (sends + attempts) else 0f
+            1 -> sendsV.toFloat()
+            2 -> (sends + attempts).toFloat()
+            else -> 0f
+        }
+    }
+
+    val fractionEntries = priceFractions.map { (price, fraction) ->
+        BarEntry(price.toFloat(), fraction)
+    }
+    val txt = when (integerState) {
+        1 -> "V Points Sent Per Grade"
+        2 -> "Total Attempts"
+        else -> "Probability of Sends Per Grade"
+    }
+
+    val fractionDataSet = BarDataSet(fractionEntries, txt).apply {
+        color = Color.CYAN
+    }
+
+    val barData = BarData(fractionDataSet)
+    barData.isHighlightEnabled = false
+    barData.setDrawValues(false)
+
+    // Fit the data to c / (exp((x - a) / b) + 1) using least squares
+    val xValues = priceFractions.keys.map { it.toFloat() }
+    val yValues = priceFractions.values.toList()
+    val fitEntries = mutableListOf<Entry>()
+
+    if (xValues.isNotEmpty() && yValues.isNotEmpty() && integerState==0) {
+        val initialA = xValues.average().toFloat()
+        val initialB = (xValues.maxOrNull()!! - xValues.minOrNull()!!) / 8
+        val initialC = yValues.maxOrNull() ?: 1f
+
+        // Convert Kotlin collections to Java arrays
+        val xValuesJava = xValues.map { it.toDouble() }.toDoubleArray()
+        val yValuesJava = yValues.map { it.toDouble() }.toDoubleArray()
+
+        // Perform least squares fitting using the Java class LogisticFitter
+        val parameters = LogisticFitter.fitLogistic(xValuesJava, yValuesJava)
+        val (a, b, c) = (parameters.toList())
+
+        xValues.sorted().forEach { x ->
+            val y = a / (Math.exp((-b*(x - c)).toDouble()) + 1).toFloat()
+            fitEntries.add(Entry(x, y.toFloat()))
+        }
+    }
+
+    val lineDataSet = LineDataSet(fitEntries, "Fit Curve").apply {
+        color = android.graphics.Color.MAGENTA
+        setDrawCircles(false)
+        lineWidth = 2f
+        valueTextColor = android.graphics.Color.MAGENTA
+        valueTextSize = 12f
+    }
+
+    val lineData = LineData(lineDataSet)
+
+    AndroidView(
+        modifier = Modifier
+            .fillMaxWidth()
+            .fillMaxHeight(.3f),
+        factory = { context ->
+            CombinedChart(context).apply {
+                xAxis.textSize = 16f
+                xAxis.textColor = android.graphics.Color.CYAN
+                xAxis.position = com.github.mikephil.charting.components.XAxis.XAxisPosition.BOTTOM
+                axisLeft.textSize = 16f
+                axisLeft.textColor = android.graphics.Color.CYAN
+
+                data = CombinedData().apply {
+                    setData(barData)
+                    setData(lineData)
+                }
+
+                description.isEnabled = false
+                legend.textSize = 16f
+                legend.textColor = android.graphics.Color.CYAN
+
+                xAxis.valueFormatter = object : ValueFormatter() {
+                    override fun getFormattedValue(value: Float): String {
+                        return "${value.toInt()}"
+                    }
+                }
+            }
+        },
+        update = { barChart ->
+            barChart.notifyDataSetChanged()
+            barChart.invalidate()
+        }
+    )
+}
 
 
 @RequiresApi(Build.VERSION_CODES.O)

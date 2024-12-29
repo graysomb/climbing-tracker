@@ -94,6 +94,7 @@ dependencies {
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
 
     implementation("com.opencsv:opencsv:5.7.1")
+    implementation("org.apache.commons:commons-math3:3.6.1")
 
 
 }
