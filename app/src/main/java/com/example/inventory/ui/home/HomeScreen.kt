@@ -187,7 +187,9 @@ private fun HomeBody(
     val chartFunctions = listOf<@Composable (List<Item>, Modifier) -> Unit>(
         { items, modifier -> ItemBarChart(items, modifier, plotByWeek) },
         { items, modifier -> ItemBarChartHP(items, modifier, plotByWeek) },
-        { items, modifier -> ItemBarChartProb(items, modifier, integerState) } // Pass the new state variable
+        { items, modifier -> ItemBarChartProb(items, modifier, 0) },
+        { items, modifier -> ItemBarChartProb(items, modifier, 1) },
+        { items, modifier -> ItemBarChartProb(items, modifier, 2) }// Pass the new state variable
     )
 
     fun writeItemsToCsv(context: Context, items: List<Item>) { /* Existing logic */ }
@@ -227,11 +229,11 @@ private fun HomeBody(
 
             }
             chartFunctions[chartIndex](itemList, Modifier.weight(1f))
-            if (chartIndex == 2) { // Only show this button when ItemBarChartProb is visible
+            /*if (chartIndex == 2) { // Only show this button when ItemBarChartProb is visible
                 Button(onClick = { integerState = (integerState + 1) % 3 }) {
                     Text(text = "Cycle State: $integerState")
                 }
-            }
+            }*/
             InventoryList(
                 itemList = itemList,
                 onItemClick = { onItemClick(it.id) },
@@ -319,8 +321,18 @@ private fun InventoryItem(
 @RequiresApi(Build.VERSION_CODES.O)
 @Composable
 fun ItemBarChartProb(itemList: List<Item>, modifier: Modifier = Modifier, integerState: Int) {
+    val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
+    val currentDate = LocalDate.now()
+    // Filter items based on the desired time range
+    val threeMonthsAgo = currentDate.minusMonths(3)
+    val filteredItems = itemList.filter { item ->
+            val itemDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
+            !itemDate.isBefore(threeMonthsAgo) && !itemDate.isAfter(currentDate)
+        }
+
+
     // Group items by price
-    val groupedByPrice = itemList.groupBy { it.price }
+    val groupedByPrice = filteredItems.groupBy { it.price }
 
     // Calculate fraction of sends/(attempts + sends) for each price group
     val priceFractions = groupedByPrice.mapValues { (_, items) ->
@@ -335,9 +347,15 @@ fun ItemBarChartProb(itemList: List<Item>, modifier: Modifier = Modifier, intege
     val fractionEntries = priceFractions.map { (price, fraction) ->
         BarEntry(price.toFloat(), fraction)
     }
-
+    val txt = "Fraction of Sends"
+    if (integerState==1) {
+        val txt = "Total Sends"
+    }
+    if (integerState==2) {
+        val txt = "Total Attempts"
+    }
     // Create BarDataSet with colors
-    val fractionDataSet = BarDataSet(fractionEntries, "Fraction of Sends").apply {
+    val fractionDataSet = BarDataSet(fractionEntries, txt).apply {
         color = Color.CYAN
     }
 
@@ -387,7 +405,7 @@ fun ItemBarChart(itemList: List<Item>, modifier: Modifier = Modifier, plotByWeek
     val currentDate = LocalDate.now()
 
     // Filter items based on the desired time range
-    val filteredItems = if (plotByWeek) {
+    /*val filteredItems = if (plotByWeek) {
         val oneYearAgo = currentDate.minusYears(1)
         itemList.filter { item ->
             val itemDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
@@ -399,8 +417,8 @@ fun ItemBarChart(itemList: List<Item>, modifier: Modifier = Modifier, plotByWeek
             val itemDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
             !itemDate.isBefore(threeMonthsAgo) && !itemDate.isAfter(currentDate)
         }
-    }
-
+    }*/
+    val filteredItems = itemList
     // Group items by week or day
     val groupedQuantities = if (plotByWeek) {
         filteredItems.groupBy { item ->
@@ -414,8 +432,8 @@ fun ItemBarChart(itemList: List<Item>, modifier: Modifier = Modifier, plotByWeek
 
     val dailyQuantities = groupedQuantities.mapValues { (_, itemsForPeriod) ->
         val zeroQuantitySum = itemsForPeriod.filter { it.quantity > 0 }.sumOf { it.price.toInt() }
-        val positiveQuantitySum = itemsForPeriod.filter { it.quantity > -1 }.sumOf { it.price.toInt() }
-        listOf(zeroQuantitySum.toFloat(), positiveQuantitySum.toFloat())
+        val positiveQuantitySum = itemsForPeriod.filter { it.quantity == 0 }.sumOf { it.price.toInt() }
+        listOf(zeroQuantitySum.toFloat(),zeroQuantitySum.toFloat()+ positiveQuantitySum.toFloat()) // maybe add a multiplier for no sends
     }
 
     // Create BarEntry lists for each quantity category
@@ -438,7 +456,6 @@ fun ItemBarChart(itemList: List<Item>, modifier: Modifier = Modifier, plotByWeek
     val barData = BarData(positiveQuantityDataSet, zeroQuantityDataSet)
     barData.isHighlightEnabled = false // Optional: disable highlighting
     barData.setDrawValues(false)      // Optional: hide values on bars
-
     AndroidView(
         modifier = Modifier
             .fillMaxWidth()
@@ -450,7 +467,6 @@ fun ItemBarChart(itemList: List<Item>, modifier: Modifier = Modifier, plotByWeek
                 xAxis.position = com.github.mikephil.charting.components.XAxis.XAxisPosition.BOTTOM
                 axisLeft.textSize = 16f
                 axisLeft.textColor = android.graphics.Color.CYAN
-
                 data = barData
                 description.isEnabled = false // Disable description
                 legend.textSize = 16f
@@ -467,6 +483,7 @@ fun ItemBarChart(itemList: List<Item>, modifier: Modifier = Modifier, plotByWeek
                         }
                     }
                 }
+                //zoom(2f,1f, 0f,0f)
             }
         },
         update = { barChart ->

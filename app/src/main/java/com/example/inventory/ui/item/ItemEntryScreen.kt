@@ -27,6 +27,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -40,6 +41,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.stringResource
@@ -223,34 +225,59 @@ fun ItemInputForm(
                 enabled = enabled,
                 singleLine = true
             )
-            OutlinedTextField(
-                value = itemDetails.quantity,
-                onValueChange = { onValueChange(itemDetails.copy(quantity = it)) },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                label = { Text(stringResource(R.string.send)) },
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                    disabledContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                ),
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                enabled = enabled,
-                singleLine = true
-            )
-            OutlinedTextField(
-                value = itemDetails.outside,
-                onValueChange = { onValueChange(itemDetails.copy(outside = it)) },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                label = { Text(stringResource(R.string.outside)) },
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                    disabledContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                ),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val isChuff = itemDetails.quantity == "0"
+                val isSend = itemDetails.quantity == "1"
+
+                Checkbox(
+                    checked = isChuff,
+                    onCheckedChange = {
+                        if (it) onValueChange(itemDetails.copy(quantity = "0"))
+                    },
+                    enabled = enabled
+                )
+                Text("Chuff")
+
+                Checkbox(
+                    checked = isSend,
+                    onCheckedChange = {
+                        if (it) onValueChange(itemDetails.copy(quantity = "1"))
+                    },
+                    enabled = enabled
+                )
+                Text(text = stringResource(R.string.send))
+            }
+
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                enabled = enabled,
-                singleLine = true
-            )
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val isIn = itemDetails.outside == "0"
+                val isOut = itemDetails.outside == "1"
+
+                Checkbox(
+                    checked = isIn,
+                    onCheckedChange = {
+                        if (it) onValueChange(itemDetails.copy(outside = "0"))
+                    },
+                    enabled = enabled
+                )
+                Text("Inside")
+
+                Checkbox(
+                    checked = isOut,
+                    onCheckedChange = {
+                        if (it) onValueChange(itemDetails.copy(outside = "1"))
+                    },
+                    enabled = enabled
+                )
+                Text("Outside")
+            }
         } else {
 
         }
