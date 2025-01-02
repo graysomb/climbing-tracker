@@ -828,7 +828,9 @@ fun ItemBarChart(itemList: List<Item>, modifier: Modifier = Modifier, plotByWeek
         filteredItems.groupBy { item ->
             val localDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
             val daysSinceEarliest = ChronoUnit.DAYS.between(earliestDate, localDate)
-            daysSinceEarliest / 7.0f
+            val week = (daysSinceEarliest / 7.0f).toInt()
+            week.toFloat()
+
         }
     } else {
         filteredItems.groupBy { item ->
@@ -886,10 +888,10 @@ fun ItemBarChart(itemList: List<Item>, modifier: Modifier = Modifier, plotByWeek
                 xAxis.valueFormatter = object : ValueFormatter() {
                     override fun getFormattedValue(value: Float): String {
                         return if (plotByWeek) {
-                            val weeksSinceEarliest = value.toInt()
+                            val weeksSinceEarliest = (value).toInt()
                             val date = earliestDate.plusDays(weeksSinceEarliest * 7L)
                             val formatter = DateTimeFormatter.ofPattern("MM-dd")
-                            "Week ${weeksSinceEarliest}: ${date.format(formatter)}"
+                            "${weeksSinceEarliest}"
                         } else {
                             val daysSinceEarliest = value.toInt()
                             val date = earliestDate.plusDays(daysSinceEarliest.toLong())
