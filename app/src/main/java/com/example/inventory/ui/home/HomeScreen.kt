@@ -25,6 +25,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import android.util.Log
 import android.widget.Toast
 import androidx.annotation.RequiresApi
 import androidx.compose.foundation.clickable
@@ -109,6 +110,9 @@ import kotlin.math.log10
 import kotlin.math.round
 import kotlin.text.toDouble
 import com.example.inventory.ui.home.LogisticFitter
+import java.time.temporal.ChronoUnit
+import kotlin.math.log
+import kotlin.math.pow
 
 object HomeDestination : NavigationDestination {
     override val route = "home"
@@ -197,7 +201,8 @@ private fun HomeBody(
         { items, modifier -> ItemBarChartHP(items, modifier, plotByWeek) },
         { items, modifier -> ItemBarChartProb(items, modifier, 0, moFilt) },
         { items, modifier -> ItemBarChartProb(items, modifier, 1, moFilt) },
-        { items, modifier -> ItemBarChartProb(items, modifier, 2, moFilt) }// Pass the new state variable
+        { items, modifier -> ItemBarChartProb(items, modifier, 2, moFilt) }
+        //{ items, modifier -> ItemBarChartProb2(items, modifier, 0, moFilt) }// Pass the new state variable
     )
 
     fun writeItemsToCsv(context: Context, items: List<Item>) { /* Existing logic */ }
@@ -403,16 +408,11 @@ fun ItemBarChartProb2(itemList: List<Item>, modifier: Modifier = Modifier, integ
 
     val meanVPerDay = (sends.toFloat() +trys.toFloat() / optimalA)/count
 
-    
-
-    val barData = BarData(fractionDataSet)
-    barData.isHighlightEnabled = false
-    barData.setDrawValues(false)
-
     // Fit the data to c / (exp((x - a) / b) + 1) using least squares
     val xValues = priceFractions.keys.map { it.toFloat() }
     val yValues = priceFractions.values.toList()
     val fitEntries = mutableListOf<Entry>()
+    val fittedYValues = mutableListOf<Float>()
 
     if (xValues.isNotEmpty() && yValues.isNotEmpty() && integerState==0) {
         val initialA = xValues.average().toFloat()
@@ -430,16 +430,72 @@ fun ItemBarChartProb2(itemList: List<Item>, modifier: Modifier = Modifier, integ
         xValues.sorted().forEach { x ->
             val y = a / (Math.exp((-b*(x - c)).toDouble()) + 1).toFloat()
             fitEntries.add(Entry(x, y.toFloat()))
+            fittedYValues.add(y.toFloat())
         }
     }
 
-    val lineDataSet = LineDataSet(fitEntries, "Fit Curve").apply {
+
+    val fittedtryValues = mutableListOf<Float>()
+    fittedYValues.map { y ->
+            if (y <= 0.0) {
+                // Handle edge cases: y = 0 or y = 1
+                val n = 0.0 // or an appropriate sentinel value
+                fittedtryValues.add(n.toFloat())
+            }
+            if (y >= 1.0) {
+                val n=1.0
+                fittedtryValues.add(n.toFloat())
+            } else {
+                val n = log(0.5,10.0) / log(1 - y.toDouble(),10.0)
+                fittedtryValues.add(n.toFloat())
+            }
+
+        }
+
+    val tryValues = mutableListOf<Float>()
+    yValues.map { y ->
+        if (y <= 0.0) {
+            // Handle edge cases: y = 0 or y = 1
+            val n = 0.0 // or an appropriate sentinel value
+            tryValues.add(n.toFloat())
+        }
+        if (y >= 1.0) {
+            val n=1.0
+            tryValues.add(n.toFloat())
+        } else {
+            val n = log(0.5,10.0) / log(1 - y.toDouble(),10.0)
+            tryValues.add(n.toFloat())
+        }
+
+    }
+
+    val tryFitEntries = mutableListOf<Entry>()
+    val tryEntries = mutableListOf<BarEntry>()
+    for (i in xValues.indices) {
+        val x = xValues[i]
+        val y = tryValues[i]
+
+        // Add to the respective lists
+        tryFitEntries.add(Entry(x, y)) // Replace 'y' with a calculated fit value if necessary
+        tryEntries.add(BarEntry(x, y))
+    }
+
+    val tryDataSet = BarDataSet(tryEntries, txt).apply {
+        color = Color.CYAN
+    }
+
+    val barData = BarData(tryDataSet)
+    barData.isHighlightEnabled = false
+    barData.setDrawValues(false)
+
+    val lineDataSet = LineDataSet(tryFitEntries, "Fit Curve").apply {
         color = android.graphics.Color.MAGENTA
         setDrawCircles(false)
         lineWidth = 2f
         valueTextColor = android.graphics.Color.MAGENTA
         valueTextSize = 12f
     }
+
 
     val lineData = LineData(lineDataSet)
 
@@ -598,6 +654,148 @@ fun ItemBarChartProb(itemList: List<Item>, modifier: Modifier = Modifier, intege
 
 @RequiresApi(Build.VERSION_CODES.O)
 @Composable
+fun ItemBarChart2(itemList: List<Item>, modifier: Modifier = Modifier, plotByWeek: Boolean) {
+    val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
+    val currentDate = LocalDate.now()
+
+    // Filter items based on the desired time range
+    /*val filteredItems = if (plotByWeek) {
+        val oneYearAgo = currentDate.minusYears(1)
+        itemList.filter { item ->
+            val itemDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
+            !itemDate.isBefore(oneYearAgo) && !itemDate.isAfter(currentDate)
+        }
+    } else {
+        val threeMonthsAgo = currentDate.minusMonths(3)
+        itemList.filter { item ->
+            val itemDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
+            !itemDate.isBefore(threeMonthsAgo) && !itemDate.isAfter(currentDate)
+        }
+    }*/
+
+    val filteredItems = itemList
+    // Group items by week or day
+    val groupedQuantities = if (plotByWeek) {
+        filteredItems.groupBy { item ->
+            LocalDateTime.parse(item.name, formatter).toLocalDate().get(WeekFields.of(Locale.getDefault()).weekOfYear()).toFloat()
+        }
+    } else {
+        filteredItems.groupBy { item ->
+            LocalDateTime.parse(item.name, formatter).dayOfYear.toFloat()
+        }
+    }
+
+    val dailyQuantities = groupedQuantities.mapValues { (_, itemsForPeriod) ->
+        val zeroQuantitySum = itemsForPeriod.filter { it.quantity > 0 }.sumOf { it.price.toInt() }
+        val positiveQuantitySum = itemsForPeriod.filter { it.quantity == 0 }.sumOf { it.price.toInt() }
+        listOf(zeroQuantitySum.toFloat(),zeroQuantitySum.toFloat()+ positiveQuantitySum.toFloat()) // maybe add a multiplier for no sends
+    }
+
+    val sends = dailyQuantities.values.map { it[0] }
+    val trys = dailyQuantities.values.map { it[1] } - sends
+    //Log.d("MyTag", mean(sends).toString())
+    //Log.d("MyTag", variance(sends).toString())
+    //Log.d("MyTag", mean(trys).toString())
+    //Log.d("MyTag", variance(trys).toString())
+    val count = dailyQuantities.size
+    var minVariance = Float.MAX_VALUE
+
+    val initialCoefficientA = 1.00f // Starting point of the search for 'a'
+    val finalCoefficientA = 8.0f // Ending point of the search for 'a'
+    val coefficientStep = 0.1f // Step size for 'a'
+
+    val optimalCoefficientA = generateSequence(initialCoefficientA) { prev ->
+        if (prev + coefficientStep <= finalCoefficientA) prev + coefficientStep else null
+    }.minOfOrNull { currentCoefficientA ->
+        val estimatedValues = sends.zip(trys).map { (send, tryi) ->
+            send + tryi / currentCoefficientA
+            }
+        val variance = variance(estimatedValues)
+        //Log.d("MyTag", variance.toString())
+            variance
+    } ?: initialCoefficientA // Handle case where range is empty
+
+    val meanVPerDay = mean(sends.zip(trys).map { (send, tryi) ->
+        send + tryi / optimalCoefficientA
+    })
+
+    val meanVDEntries = dailyQuantities.map { (day, _) ->
+        Entry(day, meanVPerDay)
+    }
+
+    // Create BarEntry lists for each quantity category
+    val zeroQuantityEntries = dailyQuantities.map { (day, sums) ->
+        BarEntry(day, sums[0])
+    }
+    val positiveQuantityEntries = dailyQuantities.map { (day, sums) ->
+        BarEntry(day, sums[1])
+    }
+
+    // Create BarDataSets with colors
+    val zeroQuantityDataSet = BarDataSet(zeroQuantityEntries, "Send").apply {
+        color = Color.CYAN
+    }
+    val positiveQuantityDataSet = BarDataSet(positiveQuantityEntries, "Attempt").apply {
+        color = Color.MAGENTA
+    }
+
+    // Create BarData and configure stacking
+    val barData = BarData(positiveQuantityDataSet, zeroQuantityDataSet)
+    barData.isHighlightEnabled = false // Optional: disable highlighting
+    barData.setDrawValues(false)      // Optional: hide values on bars
+
+    val lineDataSet = LineDataSet(meanVDEntries, "Fit Curve").apply {
+        color = android.graphics.Color.MAGENTA
+        setDrawCircles(false)
+        lineWidth = 2f
+        valueTextColor = android.graphics.Color.MAGENTA
+        valueTextSize = 12f
+    }
+
+    val lineData = LineData(lineDataSet)
+
+    AndroidView(
+        modifier = Modifier
+            .fillMaxWidth()
+            .fillMaxHeight(.3f),
+        factory = { context ->
+            CombinedChart(context).apply {
+                xAxis.textSize = 16f
+                xAxis.textColor = android.graphics.Color.CYAN
+                xAxis.position = com.github.mikephil.charting.components.XAxis.XAxisPosition.BOTTOM
+                axisLeft.textSize = 16f
+                axisLeft.textColor = android.graphics.Color.CYAN
+                data = CombinedData().apply {
+                    setData(barData)
+                    setData(lineData)
+                }
+                description.isEnabled = false // Disable description
+                legend.textSize = 16f
+                legend.textColor = android.graphics.Color.CYAN
+
+                xAxis.valueFormatter = object : ValueFormatter() {
+                    override fun getFormattedValue(value: Float): String {
+                        return if (plotByWeek) {
+                            "Week ${value.toInt()}"
+                        } else {
+                            val localDate = LocalDate.ofYearDay(LocalDate.now().year, value.toInt())
+                            val formatter = DateTimeFormatter.ofPattern("MM-dd")
+                            localDate.format(formatter)
+                        }
+                    }
+                }
+                //zoom(2f,1f, 0f,0f)
+            }
+        },
+        update = { barChart ->
+            barChart.notifyDataSetChanged()
+            barChart.invalidate()
+        }
+    )
+}
+
+@RequiresApi(Build.VERSION_CODES.O)
+@Composable
 fun ItemBarChart(itemList: List<Item>, modifier: Modifier = Modifier, plotByWeek: Boolean) {
     val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
     val currentDate = LocalDate.now()
@@ -616,17 +814,31 @@ fun ItemBarChart(itemList: List<Item>, modifier: Modifier = Modifier, plotByWeek
             !itemDate.isBefore(threeMonthsAgo) && !itemDate.isAfter(currentDate)
         }
     }*/
-    val filteredItems = itemList
+    val oneYearAgo = currentDate.minusYears(1)
+    val filteredItems = itemList.filter { item ->
+        val itemDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
+        !itemDate.isBefore(oneYearAgo) && !itemDate.isAfter(currentDate)
+    }
     // Group items by week or day
+    val earliestDate = filteredItems.minOfOrNull { item ->
+        LocalDateTime.parse(item.name, formatter).toLocalDate()
+    } ?: LocalDate.MIN
+
     val groupedQuantities = if (plotByWeek) {
         filteredItems.groupBy { item ->
-            LocalDateTime.parse(item.name, formatter).toLocalDate().get(WeekFields.of(Locale.getDefault()).weekOfYear()).toFloat()
+            val localDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
+            val daysSinceEarliest = ChronoUnit.DAYS.between(earliestDate, localDate)
+            daysSinceEarliest / 7.0f
         }
     } else {
         filteredItems.groupBy { item ->
-            LocalDateTime.parse(item.name, formatter).dayOfYear.toFloat()
+            val localDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
+            val daysSinceEarliest = ChronoUnit.DAYS.between(earliestDate, localDate)
+            daysSinceEarliest.toFloat()
         }
     }
+
+
 
     val dailyQuantities = groupedQuantities.mapValues { (_, itemsForPeriod) ->
         val zeroQuantitySum = itemsForPeriod.filter { it.quantity > 0 }.sumOf { it.price.toInt() }
@@ -654,6 +866,7 @@ fun ItemBarChart(itemList: List<Item>, modifier: Modifier = Modifier, plotByWeek
     val barData = BarData(positiveQuantityDataSet, zeroQuantityDataSet)
     barData.isHighlightEnabled = false // Optional: disable highlighting
     barData.setDrawValues(false)      // Optional: hide values on bars
+
     AndroidView(
         modifier = Modifier
             .fillMaxWidth()
@@ -673,11 +886,15 @@ fun ItemBarChart(itemList: List<Item>, modifier: Modifier = Modifier, plotByWeek
                 xAxis.valueFormatter = object : ValueFormatter() {
                     override fun getFormattedValue(value: Float): String {
                         return if (plotByWeek) {
-                            "Week ${value.toInt()}"
-                        } else {
-                            val localDate = LocalDate.ofYearDay(LocalDate.now().year, value.toInt())
+                            val weeksSinceEarliest = value.toInt()
+                            val date = earliestDate.plusDays(weeksSinceEarliest * 7L)
                             val formatter = DateTimeFormatter.ofPattern("MM-dd")
-                            localDate.format(formatter)
+                            "Week ${weeksSinceEarliest}: ${date.format(formatter)}"
+                        } else {
+                            val daysSinceEarliest = value.toInt()
+                            val date = earliestDate.plusDays(daysSinceEarliest.toLong())
+                            val formatter = DateTimeFormatter.ofPattern("MM-dd")
+                            date.format(formatter)
                         }
                     }
                 }
@@ -690,7 +907,16 @@ fun ItemBarChart(itemList: List<Item>, modifier: Modifier = Modifier, plotByWeek
         }
     )
 }
+fun mean(data: List<Float>): Float {
+    return data.sum() / data.size
+}
 
+fun variance(data: List<Float>): Float {
+    val mean = mean(data)
+    val vars = data.map { (it - mean).pow(2) }
+    val variance = vars.sum() / (data.size - 1)
+    return variance
+}
 @RequiresApi(Build.VERSION_CODES.O)
 @Composable
 fun ItemBarChartHP(itemList: List<Item>, modifier: Modifier = Modifier, plotByWeek: Boolean) {
