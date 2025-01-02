@@ -814,18 +814,22 @@ fun ItemBarChart(itemList: List<Item>, modifier: Modifier = Modifier, plotByWeek
             !itemDate.isBefore(threeMonthsAgo) && !itemDate.isAfter(currentDate)
         }
     }*/
-    val oneYearAgo = currentDate.minusYears(1)
+    val oneYearAgo = currentDate.minusYears(2)
     val filteredItems = itemList.filter { item ->
         val itemDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
         !itemDate.isBefore(oneYearAgo) && !itemDate.isAfter(currentDate)
     }
+
+    val sortedItems = filteredItems.sortedBy {
+        LocalDateTime.parse(it.name, formatter).toLocalDate()
+    }
     // Group items by week or day
-    val earliestDate = filteredItems.minOfOrNull { item ->
+    val earliestDate = sortedItems.minOfOrNull { item ->
         LocalDateTime.parse(item.name, formatter).toLocalDate()
     } ?: LocalDate.MIN
 
     val groupedQuantities = if (plotByWeek) {
-        filteredItems.groupBy { item ->
+        sortedItems.groupBy { item ->
             val localDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
             val daysSinceEarliest = ChronoUnit.DAYS.between(earliestDate, localDate)
             val week = (daysSinceEarliest / 7.0f).toInt()
@@ -833,7 +837,7 @@ fun ItemBarChart(itemList: List<Item>, modifier: Modifier = Modifier, plotByWeek
 
         }
     } else {
-        filteredItems.groupBy { item ->
+        sortedItems.groupBy { item ->
             val localDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
             val daysSinceEarliest = ChronoUnit.DAYS.between(earliestDate, localDate)
             daysSinceEarliest.toFloat()
@@ -900,6 +904,7 @@ fun ItemBarChart(itemList: List<Item>, modifier: Modifier = Modifier, plotByWeek
                         }
                     }
                 }
+
                 //zoom(2f,1f, 0f,0f)
             }
         },
