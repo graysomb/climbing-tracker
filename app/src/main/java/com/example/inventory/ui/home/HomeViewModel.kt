@@ -20,6 +20,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.inventory.data.Item
 import com.example.inventory.data.ItemsRepository
+import com.github.mikephil.charting.data.Entry
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
@@ -31,9 +32,14 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
+import org.apache.commons.math3.analysis.function.Log
 import java.time.Duration
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import java.time.temporal.WeekFields
+import java.util.Locale
+import kotlin.math.log
 
 /**
  * ViewModel to retrieve all items in the Room database.
@@ -62,7 +68,8 @@ class HomeViewModel(itemsRepository: ItemsRepository) : ViewModel() {
         ) { allItems, lastItem ->
             HomeUiState(
                 itemList = allItems,
-                lastItem = lastItem ?: Item(1, LocalDateTime.now().toString(), 0, 0, 0, 0.0, 0)
+                lastItem = lastItem ?: Item(1, LocalDateTime.now().toString(), 0, 0, 0, 0.0, 0),
+                calcs = performCalculations(allItems)
             )
         }.stateIn(
             scope = viewModelScope,
@@ -82,6 +89,77 @@ class HomeViewModel(itemsRepository: ItemsRepository) : ViewModel() {
             delay(1000) // Update every second
         }
     }
+    private fun performCalculations(itemList: List<Item>): List<Float> {
+
+        val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
+        val currentDate = LocalDate.now()
+        val oneMonthsAgo = currentDate.minusMonths(3)
+
+        val filteredItems = itemList.filter { item ->
+            val itemDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
+            !itemDate.isBefore(oneMonthsAgo) && !itemDate.isAfter(currentDate)
+        }
+
+        //val filteredItems = itemList
+
+        // Group items by week or day
+        val groupedQuantities = filteredItems.groupBy { item ->
+            LocalDateTime.parse(item.name, formatter).dayOfYear.toFloat()
+        }
+
+
+        val dailyQuantities = groupedQuantities.mapValues { (_, itemsForPeriod) ->
+            val zeroQuantitySum = itemsForPeriod.filter { it.quantity > 0 }.sumOf { it.price.toInt() }
+            val positiveQuantitySum = itemsForPeriod.filter { it.quantity == 0 }.sumOf { it.price.toInt() }
+            listOf(zeroQuantitySum.toFloat(),zeroQuantitySum.toFloat()+ positiveQuantitySum.toFloat()) // maybe add a multiplier for no sends
+        }
+
+        val sends = dailyQuantities.values.map { it[0] }
+        val trys = dailyQuantities.values.map { it[1] }
+        val trysF = trys.filter { it != 0f }
+        val sendsF = sends.filter { it != 0f }
+
+        val groupedByPrice = filteredItems.groupBy { it.price }
+
+        val priceFractions = groupedByPrice.mapValues { (_, items) ->
+            val sends = items.count { it.quantity > 0 }
+            val sendsV = items.filter{ it.quantity > 0 }.sumOf{it.price.toInt()}
+            val attempts = items.count { it.quantity <= 0 }
+            if (sends + attempts > 0) sends.toFloat() / (sends + attempts) else 0f
+            }
+
+        // Fit the data to c / (exp((x - a) / b) + 1) using least squares
+        val xValues = priceFractions.keys.map { it.toFloat() }
+        val yValues = priceFractions.values.toList()
+        val fitEntries = mutableListOf<Entry>()
+
+         val paramsFit = if (xValues.isNotEmpty() && yValues.isNotEmpty() ) {
+            val initialA = xValues.average().toFloat()
+            val initialB = (xValues.maxOrNull()!! - xValues.minOrNull()!!) / 8
+            val initialC = yValues.maxOrNull() ?: 1f
+
+            // Convert Kotlin collections to Java arrays
+            val xValuesJava = xValues.map { it.toDouble() }.toDoubleArray()
+            val yValuesJava = yValues.map { it.toDouble() }.toDoubleArray()
+
+            // Perform least squares fitting using the Java class LogisticFitter
+            val parameters = LogisticFitter.fitLogistic(xValuesJava, yValuesJava)
+            parameters.toList()
+            } else {
+                listOf(0f, 0f, 0f)
+         }
+        val a = paramsFit[0].toFloat()
+        val b  = paramsFit[1].toFloat()
+        val c = paramsFit[2].toFloat()
+        val send50 = (b*c - log((-1 + 2*a).toDouble(), Math.exp(1.0).toDouble()))/b
+        val p3 = 0.206299
+        val send3try = (b*c - log(((a-p3)/p3).toDouble(), Math.exp(1.0).toDouble()))/b
+        val p6 = 0.109101
+        val p12 = 0.0561257
+        val send6try = (b*c - log(((a-p12)/p12).toDouble(), Math.exp(1.0).toDouble()))/b
+
+        return listOf(trysF.average().toFloat(),sendsF.average().toFloat(),send50.toFloat(), send3try.toFloat(), send6try.toFloat())
+    }
 
     companion object {
         private const val TIMEOUT_MILLIS = 5_000L
@@ -91,4 +169,4 @@ class HomeViewModel(itemsRepository: ItemsRepository) : ViewModel() {
 /**
  * Ui State for HomeScreen
  */
-data class HomeUiState(val itemList: List<Item> = listOf(),val lastItem: Item)
+data class HomeUiState(val itemList: List<Item> = listOf(),val lastItem: Item, val calcs: List<Float> = listOf())

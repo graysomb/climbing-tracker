@@ -178,6 +178,7 @@ fun HomeScreen(
     ) { innerPadding ->
         HomeBody(
             itemList = homeUiState.itemList,
+            calcs = homeUiState.calcs,
             onItemClick = navigateToItemUpdate,
             modifier = modifier
                 .padding(innerPadding)
@@ -189,7 +190,7 @@ fun HomeScreen(
 
 @Composable
 private fun HomeBody(
-    itemList: List<Item>, onItemClick: (Int) -> Unit, modifier: Modifier = Modifier
+    itemList: List<Item>, calcs: List<Float>, onItemClick: (Int) -> Unit, modifier: Modifier = Modifier
 ) {
     var chartIndex by remember { mutableStateOf(0) }
     var plotByWeek by remember { mutableStateOf(false) }
@@ -249,6 +250,15 @@ private fun HomeBody(
                         else -> "last 3 months"
                     })
                 }
+            }
+            Row(){
+                Text(" Sends/Day: " + ((calcs[1]*10f).toInt().toFloat()/10f).toString())
+                Text(" Trys/Day: "+((calcs[0]*10).toInt().toFloat()/10f).toString())
+            }
+            Row(){
+                Text(" Flash: " + ((calcs[2]*1000f).toInt().toFloat()/1000f).toString())
+                Text(" Red: "+((calcs[3]*1000f).toInt().toFloat()/1000f).toString())
+                Text(" Proj: "+((calcs[4]*1000f).toInt().toFloat()/1000f).toString())
             }
             InventoryList(
                 itemList = itemList,
@@ -1014,7 +1024,7 @@ fun HomeBodyPreview() {
     InventoryTheme {
         HomeBody(listOf(
             //Item(1, "Game", 10, 20), Item(2, "Pen", 200.0, 30), Item(3, "TV", 300.0, 50)
-        ), onItemClick = {})
+        ), calcs = listOf(0f), onItemClick = {})
     }
 }
 
@@ -1022,7 +1032,7 @@ fun HomeBodyPreview() {
 @Composable
 fun HomeBodyEmptyListPreview() {
     InventoryTheme {
-        HomeBody(listOf(), onItemClick = {})
+        HomeBody(listOf(),listOf(0f), onItemClick = {})
     }
 }
 
