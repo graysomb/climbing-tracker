@@ -200,7 +200,7 @@ private fun HomeBody(
     var plotByWeek by remember { mutableStateOf(false) }
     var moFilt by remember { mutableStateOf(0) }
     var locationFilter by remember { mutableStateOf(0) }
-    var showGradeProgression by remember { mutableStateOf(false) }
+    var gradeProgressionData by remember { mutableStateOf<GradeProgressionData?>(null) }
     val pagerState = rememberPagerState()
     val filteredItems = when (locationFilter) {
         1 -> itemList.filter { it.outside == 0 }
@@ -374,11 +374,11 @@ private fun HomeBody(
                             }
                         }
                         ItemBarChart(filteredItems, Modifier.height(280.dp), plotByWeek)
-                        Button(onClick = { showGradeProgression = true }) {
-                            Text(text = "Calculate Flash/Red/Proj")
+                        Button(onClick = { gradeProgressionData = calculateGradeProgressionData(filteredItems) }) {
+                            Text(text = if (gradeProgressionData == null) "Calculate Flash/Red/Proj" else "Update Flash/Red/Proj")
                         }
-                        if (showGradeProgression) {
-                            ItemGradeProgressionChart(filteredItems, Modifier.height(280.dp))
+                        gradeProgressionData?.let { data ->
+                            ItemGradeProgressionChart(data, Modifier.height(280.dp))
                         }
                         ItemBarChartHP(filteredItems, Modifier.height(280.dp), plotByWeek)
                         ItemBarChartProb(filteredItems, Modifier.height(280.dp), 0, moFilt)
@@ -768,7 +768,7 @@ fun ItemBarChartProb2(itemList: List<Item>, modifier: Modifier = Modifier, integ
                 axisLeft.textSize = 16f
                 axisLeft.textColor = android.graphics.Color.CYAN
 
-                data = CombinedData().apply {
+                this.data = CombinedData().apply {
                     setData(barData)
                     setData(lineData)
                 }
@@ -915,9 +915,15 @@ fun ItemBarChartProb(itemList: List<Item>, modifier: Modifier = Modifier, intege
 }
 
 
+data class GradeProgressionData(
+    val earliestDate: LocalDate,
+    val flashEntries: List<Entry>,
+    val redpointEntries: List<Entry>,
+    val projectEntries: List<Entry>
+)
+
 @RequiresApi(Build.VERSION_CODES.O)
-@Composable
-fun ItemGradeProgressionChart(itemList: List<Item>, modifier: Modifier = Modifier) {
+fun calculateGradeProgressionData(itemList: List<Item>): GradeProgressionData {
     val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
     val windowDays = 90L
     val climbItems = itemList
@@ -986,21 +992,31 @@ fun ItemGradeProgressionChart(itemList: List<Item>, modifier: Modifier = Modifie
         }
     }
 
-    val flashDataSet = LineDataSet(flashEntries, "Flash").apply {
+    return GradeProgressionData(
+        earliestDate = earliestDate,
+        flashEntries = flashEntries,
+        redpointEntries = redpointEntries,
+        projectEntries = projectEntries
+    )
+}
+
+@Composable
+fun ItemGradeProgressionChart(progressionData: GradeProgressionData, modifier: Modifier = Modifier) {
+    val flashDataSet = LineDataSet(progressionData.flashEntries, "Flash").apply {
         color = Color.CYAN
         setDrawCircles(false)
         lineWidth = 2f
         valueTextColor = Color.CYAN
         valueTextSize = 10f
     }
-    val redpointDataSet = LineDataSet(redpointEntries, "Redpoint").apply {
+    val redpointDataSet = LineDataSet(progressionData.redpointEntries, "Redpoint").apply {
         color = Color.MAGENTA
         setDrawCircles(false)
         lineWidth = 2f
         valueTextColor = Color.MAGENTA
         valueTextSize = 10f
     }
-    val projectDataSet = LineDataSet(projectEntries, "Project").apply {
+    val projectDataSet = LineDataSet(progressionData.projectEntries, "Project").apply {
         color = android.graphics.Color.YELLOW
         setDrawCircles(false)
         lineWidth = 2f
@@ -1027,7 +1043,7 @@ fun ItemGradeProgressionChart(itemList: List<Item>, modifier: Modifier = Modifie
                 legend.textColor = Color.CYAN
                 xAxis.valueFormatter = object : ValueFormatter() {
                     override fun getFormattedValue(value: Float): String {
-                        val date = earliestDate.plusDays(value.toLong())
+                        val date = progressionData.earliestDate.plusDays(value.toLong())
                         return date.format(DateTimeFormatter.ofPattern("MM-dd"))
                     }
                 }
@@ -1039,7 +1055,7 @@ fun ItemGradeProgressionChart(itemList: List<Item>, modifier: Modifier = Modifie
             }
             chart.xAxis.valueFormatter = object : ValueFormatter() {
                 override fun getFormattedValue(value: Float): String {
-                    val date = earliestDate.plusDays(value.toLong())
+                    val date = progressionData.earliestDate.plusDays(value.toLong())
                     return date.format(DateTimeFormatter.ofPattern("MM-dd"))
                 }
             }
