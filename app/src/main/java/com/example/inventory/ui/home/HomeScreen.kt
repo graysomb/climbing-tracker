@@ -225,7 +225,7 @@ private fun HomeBody(
     val gradeProgressionData = gradeProgressionDataByFilter[locationFilter]
 
     fun writeCsvRows(csvWriter: CSVWriter, items: List<Item>) {
-        val header = arrayOf("id", "time", "grade", "send/reps", "type", "weight", "outside", "effort")
+        val header = arrayOf("id", "time", "grade", "send/reps", "type", "weight", "outside", "effort", "pain")
         csvWriter.writeNext(header)
 
         items.forEach { item ->
@@ -237,7 +237,8 @@ private fun HomeBody(
                 item.type.toString(),
                 item.weight.toString(),
                 item.outside.toString(),
-                item.effort.toString()
+                item.effort.toString(),
+                item.pain.toString()
             )
             csvWriter.writeNext(row)
         }
@@ -2106,7 +2107,7 @@ fun HomeBodyEmptyListPreview() {
 fun InventoryItemPreview() {
     InventoryTheme {
         InventoryItem(
-            Item(1, "Game", 10, 20,1,1.0,1,5),
+            Item(1, "Game", 10, 20,1,1.0,1,5,0),
         )
     }
 }
