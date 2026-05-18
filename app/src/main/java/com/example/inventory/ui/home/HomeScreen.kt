@@ -28,17 +28,22 @@ import android.provider.MediaStore
 import android.util.Log
 import android.widget.Toast
 import androidx.annotation.RequiresApi
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddCircle
@@ -188,23 +193,15 @@ fun HomeScreen(
 }
 
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun HomeBody(
     itemList: List<Item>, calcs: List<Float>, onItemClick: (Int) -> Unit, modifier: Modifier = Modifier
 ) {
-    var chartIndex by remember { mutableStateOf(0) }
     var plotByWeek by remember { mutableStateOf(false) }
     var integerState by remember { mutableStateOf(0) } // New state variable for integer cycling
     var moFilt by remember { mutableStateOf(0) }
-
-    val chartFunctions = listOf<@Composable (List<Item>, Modifier) -> Unit>(
-        { items, modifier -> ItemBarChart(items, modifier, plotByWeek) },
-        { items, modifier -> ItemBarChartHP(items, modifier, plotByWeek) },
-        { items, modifier -> ItemBarChartProb(items, modifier, 0, moFilt) },
-        { items, modifier -> ItemBarChartProb(items, modifier, 1, moFilt) },
-        { items, modifier -> ItemBarChartProb(items, modifier, 2, moFilt) }
-        //{ items, modifier -> ItemBarChartProb2(items, modifier, 0, moFilt) }// Pass the new state variable
-    )
+    val pagerState = rememberPagerState()
 
     fun writeCsvRows(csvWriter: CSVWriter, items: List<Item>) {
         val header = arrayOf("id", "time", "grade", "send/reps", "type", "weight", "outside", "effort")
@@ -313,16 +310,6 @@ private fun HomeBody(
             )
         } else {
             Row {
-                Button(onClick = { chartIndex = (chartIndex + 1) % chartFunctions.size }) {
-                    Text(text = "Next Chart")
-                }
-                Button(onClick = { plotByWeek = !plotByWeek }) {
-                    if (plotByWeek) {
-                        Text(text = "Week")
-                    } else {
-                        Text(text = "Day")
-                    }
-                }
                 Button(onClick = { writeItemsToCsv(context, itemList) }) {
                     Text(text = "Export")
                 }
@@ -332,33 +319,65 @@ private fun HomeBody(
                 // New button for cycling integer state
 
             }
-            chartFunctions[chartIndex](itemList, Modifier.weight(1f))
-            if (chartIndex >= 2) { // Only show this button when ItemBarChartProb is visible
-                Button(onClick = { moFilt = (moFilt + 1) % 2 }) {
-                    Text(when (moFilt) {
-                        0 -> "all time"
-                        else -> "last 3 months"
-                    })
+            HorizontalPager(
+                pageCount = 2,
+                state = pagerState,
+                modifier = Modifier.weight(1f)
+            ) { page ->
+                if (page == 0) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Row {
+                            Button(onClick = { plotByWeek = !plotByWeek }) {
+                                Text(text = if (plotByWeek) "Week" else "Day")
+                            }
+                        }
+                        ItemBarChart(itemList, Modifier.weight(1f), plotByWeek)
+                        Row(){
+                            Text(" Sends/Day: " + ((calcs[1]*10f).toInt().toFloat()/10f).toString())
+                            Text(" Trys/Day: "+((calcs[0]*10).toInt().toFloat()/10f).toString())
+                        }
+                        Row(){
+                            Text(" Load Today: " + ((calcs[5]*10f).toInt().toFloat()/10f).toString() + "%")
+                            Text(" Load Week: " + ((calcs[6]*10f).toInt().toFloat()/10f).toString() + "%")
+                        }
+                        Row(){
+                            Text(" Flash: " + ((calcs[2]*1000f).toInt().toFloat()/1000f).toString())
+                            Text(" Red: "+((calcs[3]*1000f).toInt().toFloat()/1000f).toString())
+                            Text(" Proj: "+((calcs[4]*1000f).toInt().toFloat()/1000f).toString())
+                        }
+                        InventoryList(
+                            itemList = itemList,
+                            onItemClick = { onItemClick(it.id) },
+                            modifier = Modifier.padding(horizontal = dimensionResource(id = R.dimen.padding_small))
+                        )
+                    }
+                } else {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(dimensionResource(id = R.dimen.padding_medium)),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = dimensionResource(id = R.dimen.padding_small))
+                    ) {
+                        Row {
+                            Button(onClick = { plotByWeek = !plotByWeek }) {
+                                Text(text = if (plotByWeek) "Week" else "Day")
+                            }
+                            Button(onClick = { moFilt = (moFilt + 1) % 2 }) {
+                                Text(when (moFilt) {
+                                    0 -> "all time"
+                                    else -> "last 3 months"
+                                })
+                            }
+                        }
+                        ItemBarChartHP(itemList, Modifier.height(280.dp), plotByWeek)
+                        ItemBarChartProb(itemList, Modifier.height(280.dp), 0, moFilt)
+                        ItemBarChartProb(itemList, Modifier.height(280.dp), 1, moFilt)
+                        ItemBarChartProb(itemList, Modifier.height(280.dp), 2, moFilt)
+                    }
                 }
             }
-            Row(){
-                Text(" Sends/Day: " + ((calcs[1]*10f).toInt().toFloat()/10f).toString())
-                Text(" Trys/Day: "+((calcs[0]*10).toInt().toFloat()/10f).toString())
-            }
-            Row(){
-                Text(" Load Today: " + ((calcs[5]*10f).toInt().toFloat()/10f).toString() + "%")
-                Text(" Load Week: " + ((calcs[6]*10f).toInt().toFloat()/10f).toString() + "%")
-            }
-            Row(){
-                Text(" Flash: " + ((calcs[2]*1000f).toInt().toFloat()/1000f).toString())
-                Text(" Red: "+((calcs[3]*1000f).toInt().toFloat()/1000f).toString())
-                Text(" Proj: "+((calcs[4]*1000f).toInt().toFloat()/1000f).toString())
-            }
-            InventoryList(
-                itemList = itemList,
-                onItemClick = { onItemClick(it.id) },
-                modifier = Modifier.padding(horizontal = dimensionResource(id = R.dimen.padding_small))
-            )
         }
     }
 }
@@ -604,9 +623,7 @@ fun ItemBarChartProb2(itemList: List<Item>, modifier: Modifier = Modifier, integ
     val lineData = LineData(lineDataSet)
 
     AndroidView(
-        modifier = Modifier
-            .fillMaxWidth()
-            .fillMaxHeight(.3f),
+        modifier = modifier.fillMaxWidth(),
         factory = { context ->
             CombinedChart(context).apply {
                 xAxis.textSize = 16f
@@ -725,9 +742,7 @@ fun ItemBarChartProb(itemList: List<Item>, modifier: Modifier = Modifier, intege
     val lineData = LineData(lineDataSet)
 
     AndroidView(
-        modifier = Modifier
-            .fillMaxWidth()
-            .fillMaxHeight(.3f),
+        modifier = modifier.fillMaxWidth(),
         factory = { context ->
             CombinedChart(context).apply {
                 xAxis.textSize = 16f
@@ -867,9 +882,7 @@ fun ItemBarChart2(itemList: List<Item>, modifier: Modifier = Modifier, plotByWee
     val lineData = LineData(lineDataSet)
 
     AndroidView(
-        modifier = Modifier
-            .fillMaxWidth()
-            .fillMaxHeight(.3f),
+        modifier = modifier.fillMaxWidth(),
         factory = { context ->
             CombinedChart(context).apply {
                 xAxis.textSize = 16f
@@ -1004,9 +1017,7 @@ fun ItemBarChart(itemList: List<Item>, modifier: Modifier = Modifier, plotByWeek
     val defaultVisibleUnits = if (plotByWeek) 4f else 31f
 
     AndroidView(
-        modifier = Modifier
-            .fillMaxWidth()
-            .fillMaxHeight(.3f),
+        modifier = modifier.fillMaxWidth(),
         factory = { context ->
             BarChart(context).apply {
                 xAxis.textSize = 16f
@@ -1123,9 +1134,7 @@ fun ItemBarChartHP(itemList: List<Item>, modifier: Modifier = Modifier, plotByWe
 
     // ... rest of your Composable code (AndroidView, configuration, etc.)
     AndroidView(
-        modifier = Modifier
-            .fillMaxWidth()
-            .fillMaxHeight(.3f),
+        modifier = modifier.fillMaxWidth(),
         factory = { context ->
             BarChart(context).apply {
                 // Configure chart appearance (axis labels, grid, etc.)
