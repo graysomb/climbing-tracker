@@ -346,6 +346,10 @@ private fun HomeBody(
                 Text(" Trys/Day: "+((calcs[0]*10).toInt().toFloat()/10f).toString())
             }
             Row(){
+                Text(" Load Today: " + ((calcs[5]*10f).toInt().toFloat()/10f).toString() + "%")
+                Text(" Load Week: " + ((calcs[6]*10f).toInt().toFloat()/10f).toString() + "%")
+            }
+            Row(){
                 Text(" Flash: " + ((calcs[2]*1000f).toInt().toFloat()/1000f).toString())
                 Text(" Red: "+((calcs[3]*1000f).toInt().toFloat()/1000f).toString())
                 Text(" Proj: "+((calcs[4]*1000f).toInt().toFloat()/1000f).toString())
@@ -922,6 +926,7 @@ fun ItemBarChart2(itemList: List<Item>, modifier: Modifier = Modifier, plotByWee
 fun ItemBarChart(itemList: List<Item>, modifier: Modifier = Modifier, plotByWeek: Boolean) {
     val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
     val currentDate = LocalDate.now()
+    var defaultViewportKey by remember { mutableStateOf<String?>(null) }
 
     // Filter items based on the desired time range
     /*val filteredItems = if (plotByWeek) {
@@ -995,6 +1000,8 @@ fun ItemBarChart(itemList: List<Item>, modifier: Modifier = Modifier, plotByWeek
     val barData = BarData(positiveQuantityDataSet, zeroQuantityDataSet)
     barData.isHighlightEnabled = false // Optional: disable highlighting
     barData.setDrawValues(false)      // Optional: hide values on bars
+    val viewportKey = "${plotByWeek}-${barData.xMin}-${barData.xMax}"
+    val defaultVisibleUnits = if (plotByWeek) 4f else 31f
 
     AndroidView(
         modifier = Modifier
@@ -1047,6 +1054,15 @@ fun ItemBarChart(itemList: List<Item>, modifier: Modifier = Modifier, plotByWeek
                 }
             }
             barChart.notifyDataSetChanged()
+            if (defaultViewportKey != viewportKey) {
+                defaultViewportKey = viewportKey
+                barChart.fitScreen()
+                val xRange = barData.xMax - barData.xMin
+                if (xRange > defaultVisibleUnits) {
+                    barChart.zoom(xRange / defaultVisibleUnits, 1f, barData.xMax, 0f)
+                    barChart.moveViewToX(barData.xMax)
+                }
+            }
             barChart.invalidate()
         }
     )

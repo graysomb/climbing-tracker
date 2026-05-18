@@ -118,6 +118,37 @@ class HomeViewModel(itemsRepository: ItemsRepository) : ViewModel() {
         val trys = dailyQuantities.values.map { it[1] }
         val trysF = trys.filter { it != 0f }
         val sendsF = sends.filter { it != 0f }
+        val sendsPerDay = if (sendsF.isNotEmpty()) sendsF.average().toFloat() else 0f
+        val triesPerDay = if (trysF.isNotEmpty()) trysF.average().toFloat() else 0f
+
+        fun loadingComponent(currentLoad: Float, baselineLoad: Float): Float {
+            return if (baselineLoad > 0f) currentLoad / baselineLoad else 0f
+        }
+
+        fun loadForItems(items: List<Item>): List<Float> {
+            val sendsLoad = items.filter { it.quantity > 0 }.sumOf { it.price.toInt() }.toFloat()
+            val triesLoad = sendsLoad + items.filter { it.quantity == 0 }.sumOf { it.price.toInt() }.toFloat()
+            return listOf(sendsLoad, triesLoad)
+        }
+
+        val todayItems = filteredItems.filter { item ->
+            LocalDateTime.parse(item.name, formatter).toLocalDate() == currentDate
+        }
+        val lastSevenDays = currentDate.minusDays(6)
+        val lastSevenDayItems = filteredItems.filter { item ->
+            val itemDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
+            !itemDate.isBefore(lastSevenDays) && !itemDate.isAfter(currentDate)
+        }
+        val todayLoad = loadForItems(todayItems)
+        val weekLoad = loadForItems(lastSevenDayItems)
+        val loadingThisDay = (
+            loadingComponent(todayLoad[0], sendsPerDay) +
+                loadingComponent(todayLoad[1], triesPerDay)
+            ) * 0.5f * 100f
+        val loadingThisWeek = (
+            loadingComponent(weekLoad[0], sendsPerDay * 7f) +
+                loadingComponent(weekLoad[1], triesPerDay * 7f)
+            ) * 0.5f * 100f
 
         val groupedByPrice = filteredItems.groupBy { it.price }
 
@@ -158,7 +189,15 @@ class HomeViewModel(itemsRepository: ItemsRepository) : ViewModel() {
         val p12 = 0.0561257
         val send6try = (b*c - log(((a-p12)/p12).toDouble(), Math.exp(1.0).toDouble()))/b
 
-        return listOf(trysF.average().toFloat(),sendsF.average().toFloat(),send50.toFloat(), send3try.toFloat(), send6try.toFloat())
+        return listOf(
+            triesPerDay,
+            sendsPerDay,
+            send50.toFloat(),
+            send3try.toFloat(),
+            send6try.toFloat(),
+            loadingThisDay,
+            loadingThisWeek
+        )
     }
 
     companion object {
