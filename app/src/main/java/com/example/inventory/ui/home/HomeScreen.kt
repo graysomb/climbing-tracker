@@ -200,6 +200,7 @@ private fun HomeBody(
     var plotByWeek by remember { mutableStateOf(false) }
     var moFilt by remember { mutableStateOf(0) }
     var locationFilter by remember { mutableStateOf(0) }
+    var showGradeProgression by remember { mutableStateOf(false) }
     val pagerState = rememberPagerState()
     val filteredItems = when (locationFilter) {
         1 -> itemList.filter { it.outside == 0 }
@@ -320,11 +321,8 @@ private fun HomeBody(
             )
         } else {
             Row {
-                Button(onClick = { writeItemsToCsv(context, itemList) }) {
-                    Text(text = "Export")
-                }
-                Button(onClick = { backupDatabaseToDownloads(context) }) {
-                    Text(text = "Backup")
+                Button(onClick = { plotByWeek = !plotByWeek }) {
+                    Text(text = if (plotByWeek) "Week" else "Day")
                 }
                 Button(onClick = { locationFilter = (locationFilter + 1) % 3 }) {
                     Text(text = locationFilterText)
@@ -333,17 +331,12 @@ private fun HomeBody(
 
             }
             HorizontalPager(
-                pageCount = 2,
+                pageCount = 3,
                 state = pagerState,
                 modifier = Modifier.weight(1f)
             ) { page ->
-                if (page == 0) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Row {
-                            Button(onClick = { plotByWeek = !plotByWeek }) {
-                                Text(text = if (plotByWeek) "Week" else "Day")
-                            }
-                        }
+                when (page) {
+                    0 -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         ItemBarChart(filteredItems, Modifier.height(280.dp), plotByWeek)
                         Row(){
                             Text(" Sends/Day: " + ((filteredCalcs[1]*10f).toInt().toFloat()/10f).toString())
@@ -364,8 +357,7 @@ private fun HomeBody(
                             modifier = Modifier.padding(horizontal = dimensionResource(id = R.dimen.padding_small))
                         )
                     }
-                } else {
-                    Column(
+                    1 -> Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(dimensionResource(id = R.dimen.padding_medium)),
                         modifier = Modifier
@@ -374,9 +366,6 @@ private fun HomeBody(
                             .padding(horizontal = dimensionResource(id = R.dimen.padding_small))
                     ) {
                         Row {
-                            Button(onClick = { plotByWeek = !plotByWeek }) {
-                                Text(text = if (plotByWeek) "Week" else "Day")
-                            }
                             Button(onClick = { moFilt = (moFilt + 1) % 2 }) {
                                 Text(when (moFilt) {
                                     0 -> "all time"
@@ -384,10 +373,41 @@ private fun HomeBody(
                                 })
                             }
                         }
+                        ItemBarChart(filteredItems, Modifier.height(280.dp), plotByWeek)
+                        Button(onClick = { showGradeProgression = true }) {
+                            Text(text = "Calculate Flash/Red/Proj")
+                        }
+                        if (showGradeProgression) {
+                            ItemGradeProgressionChart(filteredItems, Modifier.height(280.dp))
+                        }
                         ItemBarChartHP(filteredItems, Modifier.height(280.dp), plotByWeek)
                         ItemBarChartProb(filteredItems, Modifier.height(280.dp), 0, moFilt)
                         ItemBarChartProb(filteredItems, Modifier.height(280.dp), 1, moFilt)
                         ItemBarChartProb(filteredItems, Modifier.height(280.dp), 2, moFilt)
+                    }
+                    else -> Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(dimensionResource(id = R.dimen.padding_medium)),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(dimensionResource(id = R.dimen.padding_medium))
+                    ) {
+                        Text(
+                            text = "Settings",
+                            style = MaterialTheme.typography.titleLarge
+                        )
+                        Button(
+                            onClick = { writeItemsToCsv(context, itemList) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(text = "Export")
+                        }
+                        Button(
+                            onClick = { backupDatabaseToDownloads(context) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(text = "Backup")
+                        }
                     }
                 }
             }
@@ -890,6 +910,141 @@ fun ItemBarChartProb(itemList: List<Item>, modifier: Modifier = Modifier, intege
             }
             barChart.notifyDataSetChanged()
             barChart.invalidate()
+        }
+    )
+}
+
+
+@RequiresApi(Build.VERSION_CODES.O)
+@Composable
+fun ItemGradeProgressionChart(itemList: List<Item>, modifier: Modifier = Modifier) {
+    val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
+    val windowDays = 90L
+    val climbItems = itemList
+        .filter { it.type == 0 }
+        .sortedBy { LocalDateTime.parse(it.name, formatter).toLocalDate() }
+    val dates = climbItems
+        .map { LocalDateTime.parse(it.name, formatter).toLocalDate() }
+        .distinct()
+        .sorted()
+    val earliestDate = dates.firstOrNull() ?: LocalDate.now()
+
+    fun gradeForProbability(windowItems: List<Item>, probability: Double): Float? {
+        val priceFractions = windowItems.groupBy { it.price }.mapValues { (_, items) ->
+            val sends = items.count { it.quantity > 0 }
+            val attempts = items.count { it.quantity <= 0 }
+            if (sends + attempts > 0) sends.toFloat() / (sends + attempts) else 0f
+        }
+        val xValues = priceFractions.keys.map { it.toFloat() }
+        val yValues = priceFractions.values.toList()
+        if (xValues.size < 2 || yValues.size < 2) {
+            return null
+        }
+
+        return try {
+            val parameters = LogisticFitter.fitLogistic(
+                xValues.map { it.toDouble() }.toDoubleArray(),
+                yValues.map { it.toDouble() }.toDoubleArray()
+            ).toList()
+            val a = parameters[0].toFloat()
+            val b = parameters[1].toFloat()
+            val c = parameters[2].toFloat()
+            if (a <= probability.toFloat() || b == 0f) {
+                null
+            } else {
+                val grade = (b * c - log(((a - probability) / probability), Math.exp(1.0))) / b
+                grade.toFloat().takeIf { !it.isNaN() && !it.isInfinite() }
+            }
+        } catch (exception: Exception) {
+            null
+        }
+    }
+
+    val flashEntries = mutableListOf<Entry>()
+    val redpointEntries = mutableListOf<Entry>()
+    val projectEntries = mutableListOf<Entry>()
+
+    dates.forEach { endDate ->
+        val startDate = endDate.minusDays(windowDays - 1)
+        val windowItems = climbItems.filter { item ->
+            val itemDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
+            !itemDate.isBefore(startDate) && !itemDate.isAfter(endDate)
+        }
+        val x = ChronoUnit.DAYS.between(earliestDate, endDate).toFloat()
+        val flashGrade = gradeForProbability(windowItems, 0.5)
+        val redpointGrade = gradeForProbability(windowItems, 0.206299)
+        val projectGrade = gradeForProbability(windowItems, 0.0561257)
+
+        if (flashGrade != null) {
+            flashEntries.add(Entry(x, flashGrade))
+        }
+        if (redpointGrade != null) {
+            redpointEntries.add(Entry(x, redpointGrade))
+        }
+        if (projectGrade != null) {
+            projectEntries.add(Entry(x, projectGrade))
+        }
+    }
+
+    val flashDataSet = LineDataSet(flashEntries, "Flash").apply {
+        color = Color.CYAN
+        setDrawCircles(false)
+        lineWidth = 2f
+        valueTextColor = Color.CYAN
+        valueTextSize = 10f
+    }
+    val redpointDataSet = LineDataSet(redpointEntries, "Redpoint").apply {
+        color = Color.MAGENTA
+        setDrawCircles(false)
+        lineWidth = 2f
+        valueTextColor = Color.MAGENTA
+        valueTextSize = 10f
+    }
+    val projectDataSet = LineDataSet(projectEntries, "Project").apply {
+        color = android.graphics.Color.YELLOW
+        setDrawCircles(false)
+        lineWidth = 2f
+        valueTextColor = android.graphics.Color.YELLOW
+        valueTextSize = 10f
+    }
+    val lineData = LineData(flashDataSet, redpointDataSet, projectDataSet)
+    lineData.setDrawValues(false)
+
+    AndroidView(
+        modifier = modifier.fillMaxWidth(),
+        factory = { context ->
+            CombinedChart(context).apply {
+                xAxis.textSize = 16f
+                xAxis.textColor = Color.CYAN
+                xAxis.position = com.github.mikephil.charting.components.XAxis.XAxisPosition.BOTTOM
+                axisLeft.textSize = 16f
+                axisLeft.textColor = Color.CYAN
+                data = CombinedData().apply {
+                    setData(lineData)
+                }
+                description.isEnabled = false
+                legend.textSize = 16f
+                legend.textColor = Color.CYAN
+                xAxis.valueFormatter = object : ValueFormatter() {
+                    override fun getFormattedValue(value: Float): String {
+                        val date = earliestDate.plusDays(value.toLong())
+                        return date.format(DateTimeFormatter.ofPattern("MM-dd"))
+                    }
+                }
+            }
+        },
+        update = { chart ->
+            chart.data = CombinedData().apply {
+                setData(lineData)
+            }
+            chart.xAxis.valueFormatter = object : ValueFormatter() {
+                override fun getFormattedValue(value: Float): String {
+                    val date = earliestDate.plusDays(value.toLong())
+                    return date.format(DateTimeFormatter.ofPattern("MM-dd"))
+                }
+            }
+            chart.notifyDataSetChanged()
+            chart.invalidate()
         }
     )
 }
