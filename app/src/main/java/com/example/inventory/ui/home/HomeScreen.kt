@@ -628,6 +628,10 @@ fun ItemBarChartProb2(itemList: List<Item>, modifier: Modifier = Modifier, integ
             }
         },
         update = { barChart ->
+            barChart.data = CombinedData().apply {
+                setData(barData)
+                setData(lineData)
+            }
             barChart.notifyDataSetChanged()
             barChart.invalidate()
         }
@@ -745,6 +749,10 @@ fun ItemBarChartProb(itemList: List<Item>, modifier: Modifier = Modifier, intege
             }
         },
         update = { barChart ->
+            barChart.data = CombinedData().apply {
+                setData(barData)
+                setData(lineData)
+            }
             barChart.notifyDataSetChanged()
             barChart.invalidate()
         }
@@ -888,6 +896,21 @@ fun ItemBarChart2(itemList: List<Item>, modifier: Modifier = Modifier, plotByWee
             }
         },
         update = { barChart ->
+            barChart.data = CombinedData().apply {
+                setData(barData)
+                setData(lineData)
+            }
+            barChart.xAxis.valueFormatter = object : ValueFormatter() {
+                override fun getFormattedValue(value: Float): String {
+                    return if (plotByWeek) {
+                        "Week ${value.toInt()}"
+                    } else {
+                        val localDate = LocalDate.ofYearDay(LocalDate.now().year, value.toInt())
+                        val formatter = DateTimeFormatter.ofPattern("MM-dd")
+                        localDate.format(formatter)
+                    }
+                }
+            }
             barChart.notifyDataSetChanged()
             barChart.invalidate()
         }
@@ -1009,6 +1032,20 @@ fun ItemBarChart(itemList: List<Item>, modifier: Modifier = Modifier, plotByWeek
             }
         },
         update = { barChart ->
+            barChart.data = barData
+            barChart.xAxis.valueFormatter = object : ValueFormatter() {
+                override fun getFormattedValue(value: Float): String {
+                    return if (plotByWeek) {
+                        val weeksSinceEarliest = (value).toInt()
+                        "${weeksSinceEarliest}"
+                    } else {
+                        val daysSinceEarliest = value.toInt()
+                        val date = earliestDate.plusDays(daysSinceEarliest.toLong())
+                        val formatter = DateTimeFormatter.ofPattern("MM-dd")
+                        date.format(formatter)
+                    }
+                }
+            }
             barChart.notifyDataSetChanged()
             barChart.invalidate()
         }
@@ -1101,6 +1138,18 @@ fun ItemBarChartHP(itemList: List<Item>, modifier: Modifier = Modifier, plotByWe
             }
         },
         update = { barChart ->
+            barChart.data = barData
+            barChart.xAxis.valueFormatter = object : ValueFormatter() {
+                override fun getFormattedValue(value: Float): String {
+                    return if (plotByWeek) {
+                        "${value.toInt()}"
+                    } else {
+                        val localDate = LocalDate.ofYearDay(LocalDate.now().year, value.toInt())
+                        val formatter = DateTimeFormatter.ofPattern("MM-dd")
+                        localDate.format(formatter)
+                    }
+                }
+            }
             barChart.notifyDataSetChanged()
             barChart.invalidate()
         }
