@@ -331,7 +331,7 @@ private fun HomeBody(
                                 Text(text = if (plotByWeek) "Week" else "Day")
                             }
                         }
-                        ItemBarChart(itemList, Modifier.weight(1f), plotByWeek)
+                        ItemBarChart(itemList, Modifier.height(280.dp), plotByWeek)
                         Row(){
                             Text(" Sends/Day: " + ((calcs[1]*10f).toInt().toFloat()/10f).toString())
                             Text(" Trys/Day: "+((calcs[0]*10).toInt().toFloat()/10f).toString())
