@@ -54,6 +54,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -63,6 +64,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -95,6 +97,9 @@ import com.github.mikephil.charting.data.LineData
 import com.github.mikephil.charting.data.LineDataSet
 import com.github.mikephil.charting.formatter.ValueFormatter
 import com.opencsv.CSVWriter
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileWriter
 import java.io.IOException
@@ -200,7 +205,9 @@ private fun HomeBody(
     var plotByWeek by remember { mutableStateOf(false) }
     var moFilt by remember { mutableStateOf(0) }
     var locationFilter by remember { mutableStateOf(0) }
-    var gradeProgressionData by remember { mutableStateOf<GradeProgressionData?>(null) }
+    var gradeProgressionDataByFilter by remember { mutableStateOf<Map<Int, GradeProgressionData>>(emptyMap()) }
+    var gradeProgressionIsCalculating by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
     val pagerState = rememberPagerState()
     val filteredItems = when (locationFilter) {
         1 -> itemList.filter { it.outside == 0 }
@@ -213,6 +220,7 @@ private fun HomeBody(
         2 -> "Outside"
         else -> "Both"
     }
+    val gradeProgressionData = gradeProgressionDataByFilter[locationFilter]
 
     fun writeCsvRows(csvWriter: CSVWriter, items: List<Item>) {
         val header = arrayOf("id", "time", "grade", "send/reps", "type", "weight", "outside", "effort")
@@ -374,8 +382,28 @@ private fun HomeBody(
                             }
                         }
                         ItemBarChart(filteredItems, Modifier.height(280.dp), plotByWeek)
-                        Button(onClick = { gradeProgressionData = calculateGradeProgressionData(filteredItems) }) {
+                        Button(
+                            onClick = {
+                                if (!gradeProgressionIsCalculating) {
+                                    val itemsForCalculation = filteredItems
+                                    val filterForCalculation = locationFilter
+                                    gradeProgressionIsCalculating = true
+                                    coroutineScope.launch {
+                                        val calculatedData = withContext(Dispatchers.Default) {
+                                            calculateGradeProgressionData(itemsForCalculation)
+                                        }
+                                        gradeProgressionDataByFilter =
+                                            gradeProgressionDataByFilter + (filterForCalculation to calculatedData)
+                                        gradeProgressionIsCalculating = false
+                                    }
+                                }
+                            },
+                            enabled = !gradeProgressionIsCalculating
+                        ) {
                             Text(text = if (gradeProgressionData == null) "Calculate Flash/Red/Proj" else "Update Flash/Red/Proj")
+                        }
+                        if (gradeProgressionIsCalculating) {
+                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                         }
                         gradeProgressionData?.let { data ->
                             ItemGradeProgressionChart(data, Modifier.height(280.dp))
