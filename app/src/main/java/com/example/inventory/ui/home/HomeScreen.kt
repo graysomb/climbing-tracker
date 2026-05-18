@@ -390,9 +390,8 @@ private fun HomeBody(
                             showLoadOverlay = true,
                             baselineMonths = baselineMonths
                         )
+                        VPointsMovingAverageChart(filteredItems, Modifier.height(280.dp))
                         WeeklySentGradeChart(filteredItems, Modifier.height(280.dp))
-                        WeeklyLoadChart(filteredItems, Modifier.height(280.dp), baselineMonths)
-                        LoadDebugChart(filteredItems, Modifier.height(280.dp), baselineMonths)
                         Button(
                             onClick = {
                                 if (!gradeProgressionIsCalculating) {
@@ -1138,6 +1137,122 @@ fun WeeklySentGradeChart(itemList: List<Item>, modifier: Modifier = Modifier) {
     )
 }
 
+
+@RequiresApi(Build.VERSION_CODES.O)
+@Composable
+fun VPointsMovingAverageChart(itemList: List<Item>, modifier: Modifier = Modifier) {
+    val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
+    var defaultViewportKey by remember { mutableStateOf<String?>(null) }
+    val climbItems = itemList
+        .filter { it.type == 0 }
+        .sortedBy { LocalDateTime.parse(it.name, formatter).toLocalDate() }
+    val earliestDate = climbItems.minOfOrNull { item ->
+        LocalDateTime.parse(item.name, formatter).toLocalDate()
+    } ?: LocalDate.now()
+    val latestDate = climbItems.maxOfOrNull { item ->
+        LocalDateTime.parse(item.name, formatter).toLocalDate()
+    } ?: earliestDate
+    val dailyVPoints = climbItems
+        .groupBy { LocalDateTime.parse(it.name, formatter).toLocalDate() }
+        .mapValues { (_, itemsForDay) ->
+            itemsForDay.sumOf { it.price.toInt() }.toFloat()
+        }
+
+    fun movingAverageEntries(windowDays: Long): List<Entry> {
+        return generateSequence(earliestDate) { date ->
+            val nextDate = date.plusDays(1)
+            if (!nextDate.isAfter(latestDate)) nextDate else null
+        }.map { endDate ->
+            val rawWindowStart = endDate.minusDays(windowDays - 1)
+            val windowStart = if (rawWindowStart.isAfter(earliestDate)) rawWindowStart else earliestDate
+            val daysInWindow = ChronoUnit.DAYS.between(windowStart, endDate).toFloat() + 1f
+            val windowDates = generateSequence(windowStart) { date ->
+                val nextDate = date.plusDays(1)
+                if (!nextDate.isAfter(endDate)) nextDate else null
+            }.toList()
+            val windowVPoints = windowDates.sumOf { date ->
+                (dailyVPoints[date] ?: 0f).toDouble()
+            }.toFloat()
+            val x = ChronoUnit.DAYS.between(earliestDate, endDate).toFloat()
+            Entry(x, if (daysInWindow > 0f) windowVPoints / daysInWindow else 0f)
+        }.toList()
+    }
+
+    val sevenDayDataSet = LineDataSet(movingAverageEntries(7), "7d avg").apply {
+        color = android.graphics.Color.MAGENTA
+        setDrawCircles(false)
+        lineWidth = 2f
+        valueTextColor = android.graphics.Color.MAGENTA
+        valueTextSize = 10f
+    }
+    val thirtyDayDataSet = LineDataSet(movingAverageEntries(30), "30d avg").apply {
+        color = android.graphics.Color.YELLOW
+        setDrawCircles(false)
+        lineWidth = 2f
+        valueTextColor = android.graphics.Color.YELLOW
+        valueTextSize = 10f
+    }
+    val ninetyDayDataSet = LineDataSet(movingAverageEntries(90), "90d avg").apply {
+        color = android.graphics.Color.CYAN
+        setDrawCircles(false)
+        lineWidth = 2f
+        valueTextColor = android.graphics.Color.CYAN
+        valueTextSize = 10f
+    }
+    val lineData = LineData(sevenDayDataSet, thirtyDayDataSet, ninetyDayDataSet)
+    lineData.setDrawValues(false)
+    val viewportKey = "${lineData.xMin}-${lineData.xMax}"
+    val defaultVisibleDays = 90f
+
+    AndroidView(
+        modifier = modifier.fillMaxWidth(),
+        factory = { context ->
+            CombinedChart(context).apply {
+                xAxis.textSize = 16f
+                xAxis.textColor = Color.CYAN
+                xAxis.position = com.github.mikephil.charting.components.XAxis.XAxisPosition.BOTTOM
+                axisLeft.textSize = 16f
+                axisLeft.textColor = Color.CYAN
+                axisRight.isEnabled = false
+                data = CombinedData().apply {
+                    setData(lineData)
+                }
+                description.isEnabled = false
+                legend.textSize = 16f
+                legend.textColor = Color.CYAN
+                xAxis.valueFormatter = object : ValueFormatter() {
+                    override fun getFormattedValue(value: Float): String {
+                        val date = earliestDate.plusDays(value.toLong())
+                        return date.format(DateTimeFormatter.ofPattern("MM-dd"))
+                    }
+                }
+            }
+        },
+        update = { chart ->
+            chart.data = CombinedData().apply {
+                setData(lineData)
+            }
+            chart.axisRight.isEnabled = false
+            chart.xAxis.valueFormatter = object : ValueFormatter() {
+                override fun getFormattedValue(value: Float): String {
+                    val date = earliestDate.plusDays(value.toLong())
+                    return date.format(DateTimeFormatter.ofPattern("MM-dd"))
+                }
+            }
+            chart.notifyDataSetChanged()
+            if (defaultViewportKey != viewportKey) {
+                defaultViewportKey = viewportKey
+                chart.fitScreen()
+                val xRange = lineData.xMax - lineData.xMin
+                if (xRange > defaultVisibleDays) {
+                    chart.zoom(xRange / defaultVisibleDays, 1f, lineData.xMax, 0f)
+                    chart.moveViewToX(lineData.xMax)
+                }
+            }
+            chart.invalidate()
+        }
+    )
+}
 
 @RequiresApi(Build.VERSION_CODES.O)
 @Composable
