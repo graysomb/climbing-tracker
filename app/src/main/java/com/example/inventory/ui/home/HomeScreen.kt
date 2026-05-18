@@ -183,7 +183,6 @@ fun HomeScreen(
     ) { innerPadding ->
         HomeBody(
             itemList = homeUiState.itemList,
-            calcs = homeUiState.calcs,
             onItemClick = navigateToItemUpdate,
             modifier = modifier
                 .padding(innerPadding)
@@ -196,12 +195,23 @@ fun HomeScreen(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun HomeBody(
-    itemList: List<Item>, calcs: List<Float>, onItemClick: (Int) -> Unit, modifier: Modifier = Modifier
+    itemList: List<Item>, onItemClick: (Int) -> Unit, modifier: Modifier = Modifier
 ) {
     var plotByWeek by remember { mutableStateOf(false) }
-    var integerState by remember { mutableStateOf(0) } // New state variable for integer cycling
     var moFilt by remember { mutableStateOf(0) }
+    var locationFilter by remember { mutableStateOf(0) }
     val pagerState = rememberPagerState()
+    val filteredItems = when (locationFilter) {
+        1 -> itemList.filter { it.outside == 0 }
+        2 -> itemList.filter { it.outside == 1 }
+        else -> itemList
+    }
+    val filteredCalcs = calculateHomeCalcs(filteredItems)
+    val locationFilterText = when (locationFilter) {
+        1 -> "Inside"
+        2 -> "Outside"
+        else -> "Both"
+    }
 
     fun writeCsvRows(csvWriter: CSVWriter, items: List<Item>) {
         val header = arrayOf("id", "time", "grade", "send/reps", "type", "weight", "outside", "effort")
@@ -316,6 +326,9 @@ private fun HomeBody(
                 Button(onClick = { backupDatabaseToDownloads(context) }) {
                     Text(text = "Backup")
                 }
+                Button(onClick = { locationFilter = (locationFilter + 1) % 3 }) {
+                    Text(text = locationFilterText)
+                }
                 // New button for cycling integer state
 
             }
@@ -331,22 +344,22 @@ private fun HomeBody(
                                 Text(text = if (plotByWeek) "Week" else "Day")
                             }
                         }
-                        ItemBarChart(itemList, Modifier.height(280.dp), plotByWeek)
+                        ItemBarChart(filteredItems, Modifier.height(280.dp), plotByWeek)
                         Row(){
-                            Text(" Sends/Day: " + ((calcs[1]*10f).toInt().toFloat()/10f).toString())
-                            Text(" Trys/Day: "+((calcs[0]*10).toInt().toFloat()/10f).toString())
+                            Text(" Sends/Day: " + ((filteredCalcs[1]*10f).toInt().toFloat()/10f).toString())
+                            Text(" Trys/Day: "+((filteredCalcs[0]*10).toInt().toFloat()/10f).toString())
                         }
                         Row(){
-                            Text(" Load Today: " + ((calcs[5]*10f).toInt().toFloat()/10f).toString() + "%")
-                            Text(" Load Week: " + ((calcs[6]*10f).toInt().toFloat()/10f).toString() + "%")
+                            Text(" Load Today: " + ((filteredCalcs[5]*10f).toInt().toFloat()/10f).toString() + "%")
+                            Text(" Load Week: " + ((filteredCalcs[6]*10f).toInt().toFloat()/10f).toString() + "%")
                         }
                         Row(){
-                            Text(" Flash: " + ((calcs[2]*1000f).toInt().toFloat()/1000f).toString())
-                            Text(" Red: "+((calcs[3]*1000f).toInt().toFloat()/1000f).toString())
-                            Text(" Proj: "+((calcs[4]*1000f).toInt().toFloat()/1000f).toString())
+                            Text(" Flash: " + ((filteredCalcs[2]*1000f).toInt().toFloat()/1000f).toString())
+                            Text(" Red: "+((filteredCalcs[3]*1000f).toInt().toFloat()/1000f).toString())
+                            Text(" Proj: "+((filteredCalcs[4]*1000f).toInt().toFloat()/1000f).toString())
                         }
                         InventoryList(
-                            itemList = itemList,
+                            itemList = filteredItems,
                             onItemClick = { onItemClick(it.id) },
                             modifier = Modifier.padding(horizontal = dimensionResource(id = R.dimen.padding_small))
                         )
@@ -371,15 +384,118 @@ private fun HomeBody(
                                 })
                             }
                         }
-                        ItemBarChartHP(itemList, Modifier.height(280.dp), plotByWeek)
-                        ItemBarChartProb(itemList, Modifier.height(280.dp), 0, moFilt)
-                        ItemBarChartProb(itemList, Modifier.height(280.dp), 1, moFilt)
-                        ItemBarChartProb(itemList, Modifier.height(280.dp), 2, moFilt)
+                        ItemBarChartHP(filteredItems, Modifier.height(280.dp), plotByWeek)
+                        ItemBarChartProb(filteredItems, Modifier.height(280.dp), 0, moFilt)
+                        ItemBarChartProb(filteredItems, Modifier.height(280.dp), 1, moFilt)
+                        ItemBarChartProb(filteredItems, Modifier.height(280.dp), 2, moFilt)
                     }
                 }
             }
         }
     }
+}
+
+
+private fun calculateHomeCalcs(itemList: List<Item>): List<Float> {
+    val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
+    val currentDate = LocalDate.now()
+    val threeMonthsAgo = currentDate.minusMonths(3)
+
+    val filteredItems = itemList.filter { item ->
+        val itemDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
+        !itemDate.isBefore(threeMonthsAgo) && !itemDate.isAfter(currentDate)
+    }
+
+    val groupedQuantities = filteredItems.groupBy { item ->
+        LocalDateTime.parse(item.name, formatter).dayOfYear.toFloat()
+    }
+
+    val dailyQuantities = groupedQuantities.mapValues { (_, itemsForPeriod) ->
+        val sendsLoad = itemsForPeriod.filter { it.quantity > 0 }.sumOf { it.price.toInt() }
+        val triesLoad = sendsLoad + itemsForPeriod.filter { it.quantity == 0 }.sumOf { it.price.toInt() }
+        listOf(sendsLoad.toFloat(), triesLoad.toFloat())
+    }
+
+    val sends = dailyQuantities.values.map { it[0] }
+    val tries = dailyQuantities.values.map { it[1] }
+    val sendsPerDay = sends.filter { it != 0f }.let { if (it.isNotEmpty()) it.average().toFloat() else 0f }
+    val triesPerDay = tries.filter { it != 0f }.let { if (it.isNotEmpty()) it.average().toFloat() else 0f }
+
+    fun loadingComponent(currentLoad: Float, baselineLoad: Float): Float {
+        return if (baselineLoad > 0f) currentLoad / baselineLoad else 0f
+    }
+
+    fun loadForItems(items: List<Item>): List<Float> {
+        val sendsLoad = items.filter { it.quantity > 0 }.sumOf { it.price.toInt() }.toFloat()
+        val triesLoad = sendsLoad + items.filter { it.quantity == 0 }.sumOf { it.price.toInt() }.toFloat()
+        return listOf(sendsLoad, triesLoad)
+    }
+
+    val todayItems = filteredItems.filter { item ->
+        LocalDateTime.parse(item.name, formatter).toLocalDate() == currentDate
+    }
+    val lastSevenDays = currentDate.minusDays(6)
+    val lastSevenDayItems = filteredItems.filter { item ->
+        val itemDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
+        !itemDate.isBefore(lastSevenDays) && !itemDate.isAfter(currentDate)
+    }
+    val todayLoad = loadForItems(todayItems)
+    val weekLoad = loadForItems(lastSevenDayItems)
+    val loadingThisDay = (
+        loadingComponent(todayLoad[0], sendsPerDay) +
+            loadingComponent(todayLoad[1], triesPerDay)
+        ) * 0.5f * 100f
+    val loadingThisWeek = (
+        loadingComponent(weekLoad[0], sendsPerDay * 7f) +
+            loadingComponent(weekLoad[1], triesPerDay * 7f)
+        ) * 0.5f * 100f
+
+    val groupedByPrice = filteredItems.groupBy { it.price }
+    val priceFractions = groupedByPrice.mapValues { (_, items) ->
+        val sendsForPrice = items.count { it.quantity > 0 }
+        val attempts = items.count { it.quantity <= 0 }
+        if (sendsForPrice + attempts > 0) sendsForPrice.toFloat() / (sendsForPrice + attempts) else 0f
+    }
+
+    val xValues = priceFractions.keys.map { it.toFloat() }
+    val yValues = priceFractions.values.toList()
+    val paramsFit = if (xValues.isNotEmpty() && yValues.isNotEmpty()) {
+        val xValuesJava = xValues.map { it.toDouble() }.toDoubleArray()
+        val yValuesJava = yValues.map { it.toDouble() }.toDoubleArray()
+        LogisticFitter.fitLogistic(xValuesJava, yValuesJava).toList()
+    } else {
+        listOf(0.0, 0.0, 0.0)
+    }
+    val a = paramsFit[0].toFloat()
+    val b = paramsFit[1].toFloat()
+    val c = paramsFit[2].toFloat()
+    val send50 = if (a > 0.5f && b != 0f) {
+        (b * c - log((-1 + 2 * a).toDouble(), Math.exp(1.0))) / b
+    } else {
+        0.0
+    }
+    val p3 = 0.206299
+    val p12 = 0.0561257
+    val send3try = if (a > p3 && b != 0f) {
+        (b * c - log(((a - p3) / p3).toDouble(), Math.exp(1.0))) / b
+    } else {
+        0.0
+    }
+    val send6try = if (a > p12 && b != 0f) {
+        (b * c - log(((a - p12) / p12).toDouble(), Math.exp(1.0))) / b
+    } else {
+        0.0
+    }
+
+    return listOf(
+        triesPerDay,
+        sendsPerDay,
+        send50.toFloat(),
+        send3try.toFloat(),
+        send6try.toFloat(),
+        loadingThisDay,
+        loadingThisWeek
+    )
 }
 
 
@@ -1188,7 +1304,7 @@ fun HomeBodyPreview() {
     InventoryTheme {
         HomeBody(listOf(
             //Item(1, "Game", 10, 20), Item(2, "Pen", 200.0, 30), Item(3, "TV", 300.0, 50)
-        ), calcs = listOf(0f), onItemClick = {})
+        ), onItemClick = {})
     }
 }
 
@@ -1196,7 +1312,7 @@ fun HomeBodyPreview() {
 @Composable
 fun HomeBodyEmptyListPreview() {
     InventoryTheme {
-        HomeBody(listOf(),listOf(0f), onItemClick = {})
+        HomeBody(listOf(), onItemClick = {})
     }
 }
 
