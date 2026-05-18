@@ -382,6 +382,7 @@ private fun HomeBody(
                             }
                         }
                         ItemBarChart(filteredItems, Modifier.height(280.dp), plotByWeek)
+                        WeeklySentGradeChart(filteredItems, Modifier.height(280.dp))
                         Button(
                             onClick = {
                                 if (!gradeProgressionIsCalculating) {
@@ -943,6 +944,87 @@ fun ItemBarChartProb(itemList: List<Item>, modifier: Modifier = Modifier, intege
 }
 
 
+@RequiresApi(Build.VERSION_CODES.O)
+@Composable
+fun WeeklySentGradeChart(itemList: List<Item>, modifier: Modifier = Modifier) {
+    val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
+    val sentClimbs = itemList
+        .filter { it.type == 0 && it.quantity > 0 }
+        .sortedBy { LocalDateTime.parse(it.name, formatter).toLocalDate() }
+    val earliestDate = sentClimbs.minOfOrNull { item ->
+        LocalDateTime.parse(item.name, formatter).toLocalDate()
+    } ?: LocalDate.now()
+
+    val groupedByWeek = sentClimbs.groupBy { item ->
+        val itemDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
+        (ChronoUnit.DAYS.between(earliestDate, itemDate) / 7L).toFloat()
+    }
+
+    val maxEntries = groupedByWeek.map { (week, items) ->
+        Entry(week, items.maxOf { it.price }.toFloat())
+    }.sortedBy { it.x }
+
+    val averageEntries = groupedByWeek.map { (week, items) ->
+        Entry(week, items.map { it.price }.average().toFloat())
+    }.sortedBy { it.x }
+
+    val maxDataSet = LineDataSet(maxEntries, "Max sent").apply {
+        color = Color.CYAN
+        setDrawCircles(false)
+        lineWidth = 2f
+        valueTextColor = Color.CYAN
+        valueTextSize = 10f
+    }
+    val averageDataSet = LineDataSet(averageEntries, "Avg sent").apply {
+        color = Color.MAGENTA
+        setDrawCircles(false)
+        lineWidth = 2f
+        valueTextColor = Color.MAGENTA
+        valueTextSize = 10f
+    }
+    val lineData = LineData(maxDataSet, averageDataSet)
+    lineData.setDrawValues(false)
+
+    AndroidView(
+        modifier = modifier.fillMaxWidth(),
+        factory = { context ->
+            CombinedChart(context).apply {
+                xAxis.textSize = 16f
+                xAxis.textColor = Color.CYAN
+                xAxis.position = com.github.mikephil.charting.components.XAxis.XAxisPosition.BOTTOM
+                axisLeft.textSize = 16f
+                axisLeft.textColor = Color.CYAN
+                data = CombinedData().apply {
+                    setData(lineData)
+                }
+                description.isEnabled = false
+                legend.textSize = 16f
+                legend.textColor = Color.CYAN
+                xAxis.valueFormatter = object : ValueFormatter() {
+                    override fun getFormattedValue(value: Float): String {
+                        val date = earliestDate.plusDays(value.toLong() * 7L)
+                        return date.format(DateTimeFormatter.ofPattern("MM-dd"))
+                    }
+                }
+            }
+        },
+        update = { chart ->
+            chart.data = CombinedData().apply {
+                setData(lineData)
+            }
+            chart.xAxis.valueFormatter = object : ValueFormatter() {
+                override fun getFormattedValue(value: Float): String {
+                    val date = earliestDate.plusDays(value.toLong() * 7L)
+                    return date.format(DateTimeFormatter.ofPattern("MM-dd"))
+                }
+            }
+            chart.notifyDataSetChanged()
+            chart.invalidate()
+        }
+    )
+}
+
+
 data class GradeProgressionData(
     val earliestDate: LocalDate,
     val flashEntries: List<Entry>,
@@ -1270,11 +1352,7 @@ fun ItemBarChart(itemList: List<Item>, modifier: Modifier = Modifier, plotByWeek
             !itemDate.isBefore(threeMonthsAgo) && !itemDate.isAfter(currentDate)
         }
     }*/
-    val oneYearAgo = currentDate.minusYears(2)
-    val filteredItems = itemList.filter { item ->
-        val itemDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
-        !itemDate.isBefore(oneYearAgo) && !itemDate.isAfter(currentDate)
-    }
+    val filteredItems = itemList
 
     val sortedItems = filteredItems.sortedBy {
         LocalDateTime.parse(it.name, formatter).toLocalDate()
@@ -1407,16 +1485,24 @@ fun variance(data: List<Float>): Float {
 @Composable
 fun ItemBarChartHP(itemList: List<Item>, modifier: Modifier = Modifier, plotByWeek: Boolean) {
     val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
-    val items = itemList
+    val items = itemList.sortedBy {
+        LocalDateTime.parse(it.name, formatter).toLocalDate()
+    }
+    val earliestDate = items.minOfOrNull { item ->
+        LocalDateTime.parse(item.name, formatter).toLocalDate()
+    } ?: LocalDate.now()
 
     // Group items by day and calculate maximum values for each quantity category
     val groupedQuantities = if (plotByWeek) {
         items.groupBy { item ->
-            LocalDateTime.parse(item.name, formatter).toLocalDate().get(WeekFields.of(Locale.getDefault()).weekOfYear()).toFloat()
+            val localDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
+            val daysSinceEarliest = ChronoUnit.DAYS.between(earliestDate, localDate)
+            (daysSinceEarliest / 7.0f).toInt().toFloat()
         }
     } else {
         items.groupBy { item ->
-            LocalDateTime.parse(item.name, formatter).dayOfYear.toFloat()
+            val localDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
+            ChronoUnit.DAYS.between(earliestDate, localDate).toFloat()
         }
     }
 
@@ -1469,7 +1555,7 @@ fun ItemBarChartHP(itemList: List<Item>, modifier: Modifier = Modifier, plotByWe
                         return if (plotByWeek) {
                             "${value.toInt()}" // Display week number
                         } else {
-                            val localDate = LocalDate.ofYearDay(LocalDate.now().year, value.toInt())
+                            val localDate = earliestDate.plusDays(value.toLong())
                             val formatter = DateTimeFormatter.ofPattern("MM-dd")
                             localDate.format(formatter)
                         }
@@ -1484,7 +1570,7 @@ fun ItemBarChartHP(itemList: List<Item>, modifier: Modifier = Modifier, plotByWe
                     return if (plotByWeek) {
                         "${value.toInt()}"
                     } else {
-                        val localDate = LocalDate.ofYearDay(LocalDate.now().year, value.toInt())
+                        val localDate = earliestDate.plusDays(value.toLong())
                         val formatter = DateTimeFormatter.ofPattern("MM-dd")
                         localDate.format(formatter)
                     }
