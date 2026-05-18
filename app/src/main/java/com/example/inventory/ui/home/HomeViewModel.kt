@@ -68,13 +68,13 @@ class HomeViewModel(itemsRepository: ItemsRepository) : ViewModel() {
         ) { allItems, lastItem ->
             HomeUiState(
                 itemList = allItems,
-                lastItem = lastItem ?: Item(1, LocalDateTime.now().toString(), 0, 0, 0, 0.0, 0),
+                lastItem = lastItem ?: Item(1, LocalDateTime.now().toString(), 0, 0, 0, 0.0, 0, 5),
                 calcs = performCalculations(allItems)
             )
         }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(TIMEOUT_MILLIS),
-            initialValue = HomeUiState(lastItem = Item(1, LocalDateTime.now().toString(), 0, 0, 0, 0.0, 0))
+            initialValue = HomeUiState(lastItem = Item(1, LocalDateTime.now().toString(), 0, 0, 0, 0.0, 0, 5))
         )
 
     fun timeTickFlow(): Flow<String> = flow {

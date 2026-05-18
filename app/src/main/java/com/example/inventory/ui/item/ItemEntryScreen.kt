@@ -281,6 +281,24 @@ fun ItemInputForm(
         } else {
 
         }
+        OutlinedTextField(
+            value = itemDetails.effort,
+            onValueChange = { value ->
+                val digits = value.filter { it.isDigit() }.take(2)
+                val effort = digits.toIntOrNull()?.coerceIn(1, 10)?.toString() ?: ""
+                onValueChange(itemDetails.copy(effort = effort))
+            },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            label = { Text(stringResource(R.string.perceived_effort)) },
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                unfocusedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                disabledContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+            ),
+            modifier = Modifier.fillMaxWidth(),
+            enabled = enabled,
+            singleLine = true
+        )
         if (enabled) {
             Text(
                 text = stringResource(R.string.required_fields),
