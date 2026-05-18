@@ -88,6 +88,7 @@ import com.example.inventory.ui.navigation.NavigationDestination
 import com.example.inventory.ui.theme.InventoryTheme
 import com.github.mikephil.charting.charts.BarChart
 import com.github.mikephil.charting.charts.CombinedChart
+import com.github.mikephil.charting.components.YAxis
 import com.github.mikephil.charting.data.BarData
 import com.github.mikephil.charting.data.BarDataSet
 import com.github.mikephil.charting.data.BarEntry
@@ -381,8 +382,9 @@ private fun HomeBody(
                                 })
                             }
                         }
-                        ItemBarChart(filteredItems, Modifier.height(280.dp), plotByWeek)
+                        ItemBarChart(filteredItems, Modifier.height(280.dp), plotByWeek, showLoadOverlay = true)
                         WeeklySentGradeChart(filteredItems, Modifier.height(280.dp))
+                        WeeklyLoadChart(filteredItems, Modifier.height(280.dp))
                         Button(
                             onClick = {
                                 if (!gradeProgressionIsCalculating) {
@@ -449,8 +451,12 @@ private fun calculateHomeCalcs(itemList: List<Item>): List<Float> {
     val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
     val currentDate = LocalDate.now()
     val threeMonthsAgo = currentDate.minusMonths(3)
+    val climbItems = itemList.filter { it.type == 0 }
+    val earliestClimbDate = climbItems.minOfOrNull { item ->
+        LocalDateTime.parse(item.name, formatter).toLocalDate()
+    }
 
-    val filteredItems = itemList.filter { item ->
+    val filteredItems = climbItems.filter { item ->
         val itemDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
         !itemDate.isBefore(threeMonthsAgo) && !itemDate.isAfter(currentDate)
     }
@@ -474,30 +480,44 @@ private fun calculateHomeCalcs(itemList: List<Item>): List<Float> {
         return if (baselineLoad > 0f) currentLoad / baselineLoad else 0f
     }
 
-    fun loadForItems(items: List<Item>): List<Float> {
-        val sendsLoad = items.filter { it.quantity > 0 }.sumOf { it.price.toInt() }.toFloat()
-        val triesLoad = sendsLoad + items.filter { it.quantity == 0 }.sumOf { it.price.toInt() }.toFloat()
-        return listOf(sendsLoad, triesLoad)
+    fun triesLoadForItems(items: List<Item>): Float {
+        return items.sumOf { it.price.toInt() }.toFloat()
     }
 
-    val todayItems = filteredItems.filter { item ->
-        LocalDateTime.parse(item.name, formatter).toLocalDate() == currentDate
+    fun loadPercentForWindow(endDate: LocalDate, windowDays: Long): Float {
+        val windowStart = endDate.minusDays(windowDays - 1)
+        val baselineStart = windowStart.minusMonths(3)
+        val effectiveBaselineStart = earliestClimbDate?.let { earliestDate ->
+            if (baselineStart.isAfter(earliestDate)) baselineStart else earliestDate
+        } ?: baselineStart
+        val baselineItems = climbItems.filter { item ->
+            val itemDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
+            !itemDate.isBefore(effectiveBaselineStart) && itemDate.isBefore(windowStart)
+        }
+        val baselineDayCount = if (windowDays == 1L) {
+            baselineItems
+                .groupBy { LocalDateTime.parse(it.name, formatter).toLocalDate() }
+                .count { (_, itemsForDay) -> triesLoadForItems(itemsForDay) > 0f }
+                .toFloat()
+        } else {
+            ChronoUnit.DAYS.between(effectiveBaselineStart, windowStart).toFloat()
+        }
+        val baselineTriesPerDay = if (baselineDayCount > 0f) {
+            triesLoadForItems(baselineItems) / baselineDayCount
+        } else {
+            0f
+        }
+        val windowItems = climbItems.filter { item ->
+            val itemDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
+            !itemDate.isBefore(windowStart) && !itemDate.isAfter(endDate)
+        }
+        val windowLoad = triesLoadForItems(windowItems)
+
+        return loadingComponent(windowLoad, baselineTriesPerDay * windowDays.toFloat()) * 100f
     }
-    val lastSevenDays = currentDate.minusDays(6)
-    val lastSevenDayItems = filteredItems.filter { item ->
-        val itemDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
-        !itemDate.isBefore(lastSevenDays) && !itemDate.isAfter(currentDate)
-    }
-    val todayLoad = loadForItems(todayItems)
-    val weekLoad = loadForItems(lastSevenDayItems)
-    val loadingThisDay = (
-        loadingComponent(todayLoad[0], sendsPerDay) +
-            loadingComponent(todayLoad[1], triesPerDay)
-        ) * 0.5f * 100f
-    val loadingThisWeek = (
-        loadingComponent(weekLoad[0], sendsPerDay * 7f) +
-            loadingComponent(weekLoad[1], triesPerDay * 7f)
-        ) * 0.5f * 100f
+
+    val loadingThisDay = loadPercentForWindow(currentDate, 1)
+    val loadingThisWeek = loadPercentForWindow(currentDate, 7)
 
     val groupedByPrice = filteredItems.groupBy { it.price }
     val priceFractions = groupedByPrice.mapValues { (_, items) ->
@@ -545,6 +565,74 @@ private fun calculateHomeCalcs(itemList: List<Item>): List<Float> {
         loadingThisDay,
         loadingThisWeek
     )
+}
+
+@RequiresApi(Build.VERSION_CODES.O)
+private fun rollingLoadEntries(
+    itemList: List<Item>,
+    earliestDate: LocalDate,
+    plotByWeek: Boolean
+): List<Entry> {
+    val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
+    val climbItems = itemList
+        .filter { it.type == 0 }
+        .sortedBy { LocalDateTime.parse(it.name, formatter).toLocalDate() }
+
+    data class DailyLoad(val date: LocalDate, val sendsLoad: Float, val triesLoad: Float)
+
+    val dailyLoads = climbItems
+        .groupBy { LocalDateTime.parse(it.name, formatter).toLocalDate() }
+        .map { (date, itemsForDay) ->
+            val sendsLoad = itemsForDay.filter { it.quantity > 0 }.sumOf { it.price.toInt() }.toFloat()
+            val triesLoad = sendsLoad + itemsForDay.filter { it.quantity == 0 }.sumOf { it.price.toInt() }.toFloat()
+            DailyLoad(date, sendsLoad, triesLoad)
+        }
+        .sortedBy { it.date }
+
+    fun loadComponent(currentLoad: Float, baselineLoad: Float): Float {
+        return if (baselineLoad > 0f) currentLoad / baselineLoad else 0f
+    }
+
+    val dailyLoadByDate = dailyLoads.associateBy { it.date }
+    val latestDate = dailyLoads.maxOfOrNull { it.date } ?: return emptyList()
+
+    return generateSequence(earliestDate) { date ->
+        val nextDate = date.plusDays(1)
+        if (!nextDate.isAfter(latestDate)) nextDate else null
+    }.mapNotNull { endDate ->
+        val windowStart = endDate.minusDays(6)
+        val baselineStart = windowStart.minusMonths(3)
+        val effectiveBaselineStart = if (baselineStart.isAfter(earliestDate)) {
+            baselineStart
+        } else {
+            earliestDate
+        }
+        val previousLoads = dailyLoads.filter { load ->
+            !load.date.isBefore(effectiveBaselineStart) && load.date.isBefore(windowStart)
+        }
+        val previousDayCount = ChronoUnit.DAYS.between(effectiveBaselineStart, windowStart).toFloat()
+        val previousTriesPerDay = if (previousDayCount > 0f) {
+            previousLoads.sumOf { it.triesLoad.toDouble() }.toFloat() / previousDayCount
+        } else {
+            0f
+        }
+        val windowDates = generateSequence(windowStart) { date ->
+            val nextDate = date.plusDays(1)
+            if (!nextDate.isAfter(endDate)) nextDate else null
+        }.toList()
+        val windowTriesLoad = windowDates.sumOf { date ->
+            (dailyLoadByDate[date]?.triesLoad ?: 0f).toDouble()
+        }.toFloat()
+        val rollingLoadPercent = loadComponent(windowTriesLoad, previousTriesPerDay * 7f) * 100f
+
+        if (previousTriesPerDay > 0f) {
+            val daysSinceEarliest = ChronoUnit.DAYS.between(earliestDate, endDate).toFloat()
+            val x = if (plotByWeek) daysSinceEarliest / 7f else daysSinceEarliest
+            Entry(x, rollingLoadPercent)
+        } else {
+            null
+        }
+    }.sortedBy { it.x }.toList()
 }
 
 
@@ -1025,6 +1113,123 @@ fun WeeklySentGradeChart(itemList: List<Item>, modifier: Modifier = Modifier) {
 }
 
 
+@RequiresApi(Build.VERSION_CODES.O)
+@Composable
+fun WeeklyLoadChart(itemList: List<Item>, modifier: Modifier = Modifier) {
+    val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
+    val climbItems = itemList
+        .filter { it.type == 0 }
+        .sortedBy { LocalDateTime.parse(it.name, formatter).toLocalDate() }
+    val earliestDate = climbItems.minOfOrNull { item ->
+        LocalDateTime.parse(item.name, formatter).toLocalDate()
+    } ?: LocalDate.now()
+
+    data class DailyLoad(val date: LocalDate, val sendsLoad: Float, val triesLoad: Float)
+
+    val dailyLoads = climbItems
+        .groupBy { LocalDateTime.parse(it.name, formatter).toLocalDate() }
+        .map { (date, itemsForDay) ->
+            val sendsLoad = itemsForDay.filter { it.quantity > 0 }.sumOf { it.price.toInt() }.toFloat()
+            val triesLoad = sendsLoad + itemsForDay.filter { it.quantity == 0 }.sumOf { it.price.toInt() }.toFloat()
+            DailyLoad(date, sendsLoad, triesLoad)
+        }
+        .sortedBy { it.date }
+
+    fun loadComponent(currentLoad: Float, baselineLoad: Float): Float {
+        return if (baselineLoad > 0f) currentLoad / baselineLoad else 0f
+    }
+
+    val dailyLoadByDate = dailyLoads.associateBy { it.date }
+    val latestDate = dailyLoads.maxOfOrNull { it.date } ?: earliestDate
+    val rollingEntries = generateSequence(earliestDate) { date ->
+        val nextDate = date.plusDays(1)
+        if (!nextDate.isAfter(latestDate)) nextDate else null
+    }.mapNotNull { endDate ->
+            val windowStart = endDate.minusDays(6)
+            val baselineStart = windowStart.minusMonths(3)
+            val effectiveBaselineStart = if (baselineStart.isAfter(earliestDate)) {
+                baselineStart
+            } else {
+                earliestDate
+            }
+            val previousLoads = dailyLoads.filter { load ->
+                !load.date.isBefore(effectiveBaselineStart) && load.date.isBefore(windowStart)
+            }
+            val previousDayCount = ChronoUnit.DAYS.between(effectiveBaselineStart, windowStart).toFloat()
+            val previousTriesPerDay = if (previousDayCount > 0f) {
+                previousLoads.sumOf { it.triesLoad.toDouble() }.toFloat() / previousDayCount
+            } else {
+                0f
+            }
+            val windowDates = generateSequence(windowStart) { date ->
+                val nextDate = date.plusDays(1)
+                if (!nextDate.isAfter(endDate)) nextDate else null
+            }.toList()
+            val windowTriesLoad = windowDates.sumOf { date ->
+                (dailyLoadByDate[date]?.triesLoad ?: 0f).toDouble()
+            }.toFloat()
+            val rollingLoadPercent = loadComponent(windowTriesLoad, previousTriesPerDay * 7f) * 100f
+
+            if (previousTriesPerDay > 0f) {
+                val x = ChronoUnit.DAYS.between(earliestDate, endDate).toFloat()
+                Entry(x, rollingLoadPercent)
+            } else {
+                null
+            }
+        }
+        .sortedBy { it.x }
+        .toList()
+
+    val rollingLoadDataSet = LineDataSet(rollingEntries, "7-day load %").apply {
+        color = android.graphics.Color.YELLOW
+        setDrawCircles(false)
+        lineWidth = 2f
+        valueTextColor = android.graphics.Color.YELLOW
+        valueTextSize = 10f
+    }
+    val lineData = LineData(rollingLoadDataSet)
+    lineData.setDrawValues(false)
+
+    AndroidView(
+        modifier = modifier.fillMaxWidth(),
+        factory = { context ->
+            CombinedChart(context).apply {
+                xAxis.textSize = 16f
+                xAxis.textColor = Color.CYAN
+                xAxis.position = com.github.mikephil.charting.components.XAxis.XAxisPosition.BOTTOM
+                axisLeft.textSize = 16f
+                axisLeft.textColor = Color.CYAN
+                data = CombinedData().apply {
+                    setData(lineData)
+                }
+                description.isEnabled = false
+                legend.textSize = 16f
+                legend.textColor = Color.CYAN
+                xAxis.valueFormatter = object : ValueFormatter() {
+                    override fun getFormattedValue(value: Float): String {
+                        val date = earliestDate.plusDays(value.toLong())
+                        return date.format(DateTimeFormatter.ofPattern("MM-dd"))
+                    }
+                }
+            }
+        },
+        update = { chart ->
+            chart.data = CombinedData().apply {
+                setData(lineData)
+            }
+            chart.xAxis.valueFormatter = object : ValueFormatter() {
+                override fun getFormattedValue(value: Float): String {
+                    val date = earliestDate.plusDays(value.toLong())
+                    return date.format(DateTimeFormatter.ofPattern("MM-dd"))
+                }
+            }
+            chart.notifyDataSetChanged()
+            chart.invalidate()
+        }
+    )
+}
+
+
 data class GradeProgressionData(
     val earliestDate: LocalDate,
     val flashEntries: List<Entry>,
@@ -1333,7 +1538,12 @@ fun ItemBarChart2(itemList: List<Item>, modifier: Modifier = Modifier, plotByWee
 
 @RequiresApi(Build.VERSION_CODES.O)
 @Composable
-fun ItemBarChart(itemList: List<Item>, modifier: Modifier = Modifier, plotByWeek: Boolean) {
+fun ItemBarChart(
+    itemList: List<Item>,
+    modifier: Modifier = Modifier,
+    plotByWeek: Boolean,
+    showLoadOverlay: Boolean = false
+) {
     val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
     val currentDate = LocalDate.now()
     var defaultViewportKey by remember { mutableStateOf<String?>(null) }
@@ -1401,24 +1611,49 @@ fun ItemBarChart(itemList: List<Item>, modifier: Modifier = Modifier, plotByWeek
     val positiveQuantityDataSet = BarDataSet(positiveQuantityEntries, "Attempt").apply {
         color = Color.MAGENTA
     }
-
     // Create BarData and configure stacking
     val barData = BarData(positiveQuantityDataSet, zeroQuantityDataSet)
     barData.isHighlightEnabled = false // Optional: disable highlighting
     barData.setDrawValues(false)      // Optional: hide values on bars
+    val lineData = if (showLoadOverlay) {
+        val loadPercentDataSet = LineDataSet(
+            rollingLoadEntries(itemList, earliestDate, plotByWeek),
+            "7-day load %"
+        ).apply {
+            color = android.graphics.Color.YELLOW
+            axisDependency = YAxis.AxisDependency.RIGHT
+            setDrawCircles(false)
+            lineWidth = 2f
+            valueTextColor = android.graphics.Color.YELLOW
+            valueTextSize = 10f
+        }
+        LineData(loadPercentDataSet).apply {
+            setDrawValues(false)
+        }
+    } else {
+        null
+    }
+    val combinedData = CombinedData().apply {
+        setData(barData)
+        lineData?.let { setData(it) }
+    }
     val viewportKey = "${plotByWeek}-${barData.xMin}-${barData.xMax}"
     val defaultVisibleUnits = if (plotByWeek) 4f else 31f
 
     AndroidView(
         modifier = modifier.fillMaxWidth(),
         factory = { context ->
-            BarChart(context).apply {
+            CombinedChart(context).apply {
                 xAxis.textSize = 16f
                 xAxis.textColor = android.graphics.Color.CYAN
                 xAxis.position = com.github.mikephil.charting.components.XAxis.XAxisPosition.BOTTOM
                 axisLeft.textSize = 16f
                 axisLeft.textColor = android.graphics.Color.CYAN
-                data = barData
+                axisRight.textSize = 16f
+                axisRight.textColor = android.graphics.Color.YELLOW
+                axisRight.axisMinimum = 0f
+                axisRight.isEnabled = showLoadOverlay
+                data = combinedData
                 description.isEnabled = false // Disable description
                 legend.textSize = 16f
                 legend.textColor = android.graphics.Color.CYAN
@@ -1443,7 +1678,11 @@ fun ItemBarChart(itemList: List<Item>, modifier: Modifier = Modifier, plotByWeek
             }
         },
         update = { barChart ->
-            barChart.data = barData
+            barChart.data = combinedData
+            barChart.axisRight.textSize = 16f
+            barChart.axisRight.textColor = android.graphics.Color.YELLOW
+            barChart.axisRight.axisMinimum = 0f
+            barChart.axisRight.isEnabled = showLoadOverlay
             barChart.xAxis.valueFormatter = object : ValueFormatter() {
                 override fun getFormattedValue(value: Float): String {
                     return if (plotByWeek) {
