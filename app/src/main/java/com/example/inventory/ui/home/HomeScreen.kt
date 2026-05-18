@@ -206,8 +206,97 @@ private fun HomeBody(
         //{ items, modifier -> ItemBarChartProb2(items, modifier, 0, moFilt) }// Pass the new state variable
     )
 
-    fun writeItemsToCsv(context: Context, items: List<Item>) { /* Existing logic */ }
-    fun backupDatabaseToDownloads(context: Context) { /* Existing logic */ }
+    fun writeCsvRows(csvWriter: CSVWriter, items: List<Item>) {
+        val header = arrayOf("id", "time", "grade", "send/reps", "type", "weight", "outside")
+        csvWriter.writeNext(header)
+
+        items.forEach { item ->
+            val row = arrayOf(
+                item.id.toString(),
+                item.name,
+                item.price.toString(),
+                item.quantity.toString(),
+                item.type.toString(),
+                item.weight.toString(),
+                item.outside.toString()
+            )
+            csvWriter.writeNext(row)
+        }
+    }
+
+    fun writeItemsToCsv(context: Context, items: List<Item>) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val resolver = context.contentResolver
+                val contentValues = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, "climb_data.csv")
+                    put(MediaStore.MediaColumns.MIME_TYPE, "text/csv")
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                }
+
+                val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+                if (uri != null) {
+                    val outputStream = resolver.openOutputStream(uri)
+                        ?: throw IOException("Could not open Downloads file")
+                    outputStream.use {
+                        OutputStreamWriter(outputStream).use { writer ->
+                            CSVWriter(writer).use { csvWriter ->
+                                writeCsvRows(csvWriter, items)
+                            }
+                        }
+                    }
+                    Toast.makeText(context, "Exported climb_data.csv to Downloads", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(context, "Could not create CSV export", Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                val csvFile = File(downloadsDir, "climb_data.csv")
+                CSVWriter(FileWriter(csvFile)).use { csvWriter ->
+                    writeCsvRows(csvWriter, items)
+                }
+                Toast.makeText(context, "Exported climb_data.csv to Downloads", Toast.LENGTH_SHORT).show()
+            }
+        } catch (exception: IOException) {
+            Toast.makeText(context, "CSV export failed: ${exception.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    fun backupDatabaseToDownloads(context: Context) {
+        val dbFile = context.getDatabasePath("item_database")
+
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val resolver = context.contentResolver
+                val contentValues = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, "my_database_backup.db")
+                    put(MediaStore.MediaColumns.MIME_TYPE, "application/octet-stream")
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                }
+
+                val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+                if (uri != null) {
+                    val outputStream = resolver.openOutputStream(uri)
+                        ?: throw IOException("Could not open Downloads file")
+                    outputStream.use {
+                        dbFile.inputStream().use { inputStream ->
+                            inputStream.copyTo(outputStream)
+                        }
+                    }
+                    Toast.makeText(context, "Backed up my_database_backup.db to Downloads", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(context, "Could not create database backup", Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                val backupFile = File(downloadsDir, "my_database_backup.db")
+                dbFile.copyTo(backupFile, overwrite = true)
+                Toast.makeText(context, "Backed up my_database_backup.db to Downloads", Toast.LENGTH_SHORT).show()
+            }
+        } catch (exception: IOException) {
+            Toast.makeText(context, "Database backup failed: ${exception.message}", Toast.LENGTH_LONG).show()
+        }
+    }
 
     val context = LocalContext.current
 

@@ -69,6 +69,10 @@ android {
     namespace = "com.example.inventory"
 }
 
+kotlin {
+    jvmToolchain(17)
+}
+
 dependencies {
     // Import the Compose BOM
     implementation(platform("androidx.compose:compose-bom:2023.06.01"))
