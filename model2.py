@@ -111,7 +111,6 @@ plt.ylim(-0.05, 1.05)
 plt.title("Send probability by grade")
 plt.legend()
 plt.tight_layout()
-plt.show()
 
 # ============================================================
 # Rolling-window logistic fits through time
@@ -280,7 +279,6 @@ def plot_rolling_parameter(results, param, param_err, ylabel):
         cbar.set_label(r"$R^2$")
 
         plt.tight_layout()
-        plt.show()
 
 
 plot_rolling_parameter(
@@ -365,7 +363,6 @@ def plot_rolling_parameter_combined(results, param, param_err, ylabel):
     plt.title(f"Rolling {rolling_window_days}-day logistic fit")
     plt.legend(title="Climb type")
     plt.tight_layout()
-    plt.show()
 
 plot_rolling_parameter_combined(
 rolling_results,
@@ -517,7 +514,6 @@ plt.ylabel("Surprisal under all-time logistic prior [bits]")
 plt.title("Attempt-level surprise through time")
 plt.legend(title="Climb type")
 plt.tight_layout()
-plt.show()
 
 # ============================================================
 # Rolling average surprise
@@ -549,7 +545,6 @@ plt.ylabel(f"{surprisal_window_days}-day rolling mean surprise [bits]")
 plt.title("Rolling surprise relative to all-time logistic prior")
 plt.legend(title="Climb type")
 plt.tight_layout()
-plt.show()
 
 # ============================================================
 # Compare static-prior surprise vs updated-posterior surprise
@@ -588,7 +583,6 @@ for label, sub in surprise_daily_compare.groupby("label"):
     plt.title(f"Static vs updated surprise: {label}")
     plt.legend()
     plt.tight_layout()
-    plt.show()
 
     # ============================================================
 # Information gain from sequential updating
@@ -626,7 +620,6 @@ plt.ylabel(f"{surprisal_window_days}-day rolling mean information gain [bits]")
 plt.title("How much recent history improves prediction")
 plt.legend(title="Climb type")
 plt.tight_layout()
-plt.show()
 
 # ============================================================
 # Within-day attempt timing histogram
@@ -672,7 +665,6 @@ plt.xticks(np.arange(0, 25, 2))
 plt.xlim(0, 24)
 plt.legend(title="Climb type")
 plt.tight_layout()
-plt.show()
 
 # ============================================================
 # Align attempts within daily sessions
@@ -753,7 +745,6 @@ plt.ylabel("Number of attempts")
 plt.title(f"Attempts aligned by daily session mean, binned every {session_bin_minutes} min")
 plt.legend(title="Climb type")
 plt.tight_layout()
-plt.show()
 
 # ============================================================
 # Duration-normalized session time
@@ -799,7 +790,6 @@ plt.ylabel("Number of attempts")
 plt.title("Attempts aligned and normalized by daily session duration")
 plt.legend(title="Climb type")
 plt.tight_layout()
-plt.show()
 
 
 # ============================================================
@@ -954,7 +944,6 @@ plt.ylabel("Mean surprisal [bits]")
 plt.title("Surprise vs duration-normalized session time")
 plt.legend()
 plt.tight_layout()
-plt.show()
 
 # ============================================================
 # Plot posterior surprise vs duration-normalized session time
@@ -979,7 +968,6 @@ plt.ylabel("Mean posterior surprisal [bits]")
 plt.title("Sequentially updated surprise vs duration-normalized session time")
 plt.legend()
 plt.tight_layout()
-plt.show()
 
 # ============================================================
 # Plot information gain vs duration-normalized session time
@@ -1005,7 +993,6 @@ plt.ylabel("Mean information gain [bits]")
 plt.title("Information gain from sequential updating vs session phase")
 plt.legend(title="Climb type")
 plt.tight_layout()
-plt.show()
 
 # ============================================================
 # Raw scatter: information gain vs session phase
@@ -1030,7 +1017,6 @@ plt.ylabel("Information gain [bits]")
 plt.title("Raw information gain vs duration-normalized session time")
 plt.legend(title="Climb type")
 plt.tight_layout()
-plt.show()
 
 # ============================================================
 # Histogram of intervals between consecutive attempts
@@ -1058,7 +1044,6 @@ plt.xlabel("Minutes between consecutive attempts")
 plt.ylabel("Count")
 plt.title("Intervals between consecutive attempts")
 plt.tight_layout()
-plt.show()
 
 # ============================================================
 # Log-scale histogram of intervals between attempts
@@ -1084,7 +1069,6 @@ plt.axvline(7 * 24 * 60, linestyle="--", linewidth=1, label="1 week")
 
 plt.legend()
 plt.tight_layout()
-plt.show()
 
 # ============================================================
 # Log-scale interval histogram split by inside/outside
@@ -1151,7 +1135,6 @@ plt.axvline(7 * 24 * 60, linestyle="--", linewidth=1, label="1 week")
 
 plt.legend()
 plt.tight_layout()
-plt.show()
 
 # ============================================================
 # Log-scale interval histograms by inside/outside and event ordering
@@ -1260,7 +1243,6 @@ for ax, label in zip(axes, ["inside", "outside"]):
 axes[-1].set_xlabel("Minutes between consecutive attempts, log scale")
 
 plt.tight_layout()
-plt.show()
 
 # ============================================================
 # Are sends more likely after longer wait intervals?
@@ -1378,7 +1360,6 @@ plt.axvline(60, linestyle="--", linewidth=1, label="1 hour")
 
 plt.legend()
 plt.tight_layout()
-plt.show()
 
 # ============================================================
 # Normalized fail-send probability vs wait interval
@@ -1440,7 +1421,6 @@ plt.ylim(-0.05, max(0.2, fail_send_summary["p_fail_send"].max() * 1.2))
 
 plt.legend()
 plt.tight_layout()
-plt.show()
 
 # ============================================================
 # After a fail, are sends more likely after longer wait intervals?
@@ -1568,7 +1548,6 @@ plt.ylim(-0.05, 1.05)
 
 plt.legend()
 plt.tight_layout()
-plt.show()
 
 # ============================================================
 # Grade-split wait interval plots
@@ -1686,7 +1665,6 @@ plt.axvline(60, linestyle="--", linewidth=1, label="1 hour")
 plt.ylim(-0.05, 1.05)
 plt.legend(title="Grade", bbox_to_anchor=(1.05, 1), loc="upper left")
 plt.tight_layout()
-plt.show()
 
 # ============================================================
 # P(current send | dt), split by grade
@@ -1742,7 +1720,6 @@ plt.axvline(60, linestyle="--", linewidth=1, label="1 hour")
 plt.ylim(-0.05, 1.05)
 plt.legend(title="Grade", bbox_to_anchor=(1.05, 1), loc="upper left")
 plt.tight_layout()
-plt.show()
 
 # ============================================================
 # Attempts until next send
@@ -1835,7 +1812,6 @@ plt.xscale("log")
 plt.yscale("log")
 plt.xticks(np.arange(1, max_trials_to_plot + 1))
 plt.tight_layout()
-plt.show()
 
 # ============================================================
 # Probability histogram: attempts until next send
@@ -1864,7 +1840,6 @@ plt.yscale("log")
 plt.title("Probability distribution of attempts until next send")
 plt.xticks(trial_prob["trials_to_send"])
 plt.tight_layout()
-plt.show()
 
 # ============================================================
 # Grade-controlled attempts-to-send distribution
@@ -1941,7 +1916,6 @@ plt.xscale("log")
 plt.yscale("log")
 plt.xticks(grade_controlled_prob["trials_to_send"])
 plt.tight_layout()
-plt.show()
 
 # ============================================================
 # Attempts-to-send distribution split by target send grade
@@ -1965,7 +1939,6 @@ plt.xscale("log")
 plt.yscale("log")
 plt.legend(title="Target send grade", bbox_to_anchor=(1.05, 1), loc="upper left")
 plt.tight_layout()
-plt.show()
 
 # ============================================================
 # Attempts-to-send distribution split by target send grade
@@ -2138,7 +2111,6 @@ for ax, label in zip(axes, label_order):
 axes[-1].set_xlabel("Number of attempts until next send, log scale")
 
 plt.tight_layout()
-plt.show()
 
 # ============================================================
 # Flash probability by grade
@@ -2187,7 +2159,6 @@ plt.title("Flash probability by grade")
 plt.ylim(0, 1.05)
 
 plt.tight_layout()
-plt.show()
 
 # ============================================================
 # Total V-points per week

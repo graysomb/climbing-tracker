@@ -622,6 +622,172 @@ df_nll["nll_fail"] = np.where(
 
 df_nll["nll_total"] = df_nll["nll_send"] + df_nll["nll_fail"]
 
+# ============================================================
+# Performance/load/surprise vs duration-normalized session time
+#
+# Session start = first climb of the day
+# Session end   = last climb of the day
+# Duration      = end - start
+#
+# performance = surprise_send - surprise_fail
+# load        = surprise_send + surprise_fail
+# ============================================================
+
+phase_bin_width = 0.05
+
+df_session_phase = df_nll.copy()
+df_session_phase["session_date"] = df_session_phase["datetime"].dt.date
+
+session_summary = (
+    df_session_phase
+    .groupby("session_date")
+    .agg(
+        session_start=("datetime", "min"),
+        session_end=("datetime", "max"),
+        mean_time=("datetime", "mean"),
+        n_attempts=("datetime", "size")
+    )
+    .reset_index()
+)
+
+session_summary["session_duration_min"] = (
+    session_summary["session_end"] - session_summary["session_start"]
+).dt.total_seconds() / 60
+
+df_session_phase = df_session_phase.merge(
+    session_summary,
+    on="session_date",
+    how="left"
+)
+
+df_session_phase["minutes_from_session_mean"] = (
+    df_session_phase["datetime"] - df_session_phase["mean_time"]
+).dt.total_seconds() / 60
+
+df_session_phase["session_phase_centered"] = (
+    df_session_phase["minutes_from_session_mean"] /
+    df_session_phase["session_duration_min"]
+)
+
+df_session_phase = (
+    df_session_phase
+    .replace([np.inf, -np.inf], np.nan)
+    .dropna(subset=["session_phase_centered"])
+    .copy()
+)
+
+df_session_phase["performance"] = (
+    df_session_phase["nll_send"] - df_session_phase["nll_fail"]
+)
+df_session_phase["load"] = (
+    df_session_phase["nll_send"] + df_session_phase["nll_fail"]
+)
+df_session_phase["surprise_send"] = df_session_phase["nll_send"]
+df_session_phase["surprise_fail"] = df_session_phase["nll_fail"]
+
+def standard_error(values):
+    if len(values) <= 1:
+        return np.nan
+    return values.std(ddof=1) / np.sqrt(len(values))
+
+phase_plot_specs = [
+    ("mean_performance", "se_performance", "Performance"),
+    ("mean_load", "se_load", "Load"),
+    ("mean_surprise_send", "se_surprise_send", "Surprise send"),
+    ("mean_surprise_fail", "se_surprise_fail", "Surprise fail")
+]
+
+
+def plot_session_phase_metrics(data, title, summary_label):
+    plot_df = data.copy()
+
+    if plot_df.empty:
+        print(f"\nNo session phase data for {summary_label}.")
+        return
+
+    phase_max = np.nanpercentile(
+        np.abs(plot_df["session_phase_centered"]),
+        99
+    )
+
+    if not np.isfinite(phase_max) or phase_max <= 0:
+        print(f"\nNo usable session phase range for {summary_label}.")
+        return
+
+    phase_bins = np.arange(
+        -phase_max,
+        phase_max + phase_bin_width,
+        phase_bin_width
+    )
+
+    plot_df["phase_bin"] = pd.cut(
+        plot_df["session_phase_centered"],
+        bins=phase_bins,
+        include_lowest=True
+    )
+
+    session_phase_summary = (
+        plot_df
+        .groupby("phase_bin", observed=True)
+        .agg(
+            n=("send", "size"),
+            mean_phase=("session_phase_centered", "mean"),
+            mean_performance=("performance", "mean"),
+            se_performance=("performance", standard_error),
+            mean_load=("load", "mean"),
+            se_load=("load", standard_error),
+            mean_surprise_send=("surprise_send", "mean"),
+            se_surprise_send=("surprise_send", standard_error),
+            mean_surprise_fail=("surprise_fail", "mean"),
+            se_surprise_fail=("surprise_fail", standard_error)
+        )
+        .reset_index()
+    )
+
+    print(f"\nDuration-normalized session phase summary ({summary_label}):")
+    print(session_phase_summary.head())
+
+    plt.figure(figsize=(12, 6))
+
+    for mean_col, se_col, label in phase_plot_specs:
+        plt.errorbar(
+            session_phase_summary["mean_phase"],
+            session_phase_summary[mean_col],
+            yerr=session_phase_summary[se_col],
+            marker="o",
+            capsize=2,
+            linewidth=1.5,
+            label=label
+        )
+
+    plt.axvline(0, linestyle="--", linewidth=1)
+    plt.axhline(0, linestyle=":", linewidth=1)
+
+    plt.xlabel("Centered session phase: (time - session mean) / session duration")
+    plt.ylabel(f"Mean value per attempt [{unit_label}]")
+    plt.title(title)
+    plt.legend()
+    plt.tight_layout()
+
+
+plot_session_phase_metrics(
+    df_session_phase,
+    "Performance, load, and surprise vs duration-normalized session time",
+    "all attempts"
+)
+
+plot_session_phase_metrics(
+    df_session_phase[df_session_phase["outside"] == 0],
+    "Inside performance, load, and surprise vs duration-normalized session time",
+    "inside"
+)
+
+plot_session_phase_metrics(
+    df_session_phase[df_session_phase["outside"] == 1],
+    "Outside performance, load, and surprise vs duration-normalized session time",
+    "outside"
+)
+
 # Week starts on Monday
 df_nll["week"] = df_nll["datetime"].dt.to_period("W-MON").dt.start_time
 
