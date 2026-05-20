@@ -385,7 +385,7 @@ else:
     unit_label = "nats"
 
 
-# ---- attempt-level performance ----
+# ---- attempt-level surprise_send ----
 df["surprise_send"] = np.where(
     df["send"] == 1,
     -log_fun(df["p_send_expected"]),
@@ -396,22 +396,22 @@ df["surprise_fail"] = np.where(
     -log_fun(df["p_fail_expected"]),
     0.0
 )
-df["performance"] = df["surprise_send"] - df["surprise_fail"]
+df["surprise_send"] = df["surprise_send"]
 df["info_load"] = df["surprise_send"] + df["surprise_fail"]
 
-daily_performance = (
+daily_surprise_send = (
     df
     .groupby("day")
     .agg(
-        mean_performance=("performance", "mean"),
-        total_performance=("performance", "sum"),
-        n_attempts=("performance", "size"),
+        mean_surprise_send=("surprise_send", "mean"),
+        total_surprise_send=("surprise_send", "sum"),
+        n_attempts=("surprise_send", "size"),
         n_sends=("send", "sum")
     )
     .reset_index()
 )
-daily_performance["n_fails"] = (
-    daily_performance["n_attempts"] - daily_performance["n_sends"]
+daily_surprise_send["n_fails"] = (
+    daily_surprise_send["n_attempts"] - daily_surprise_send["n_sends"]
 )
 
 daily_load = (
@@ -485,7 +485,7 @@ analysis_df = (
     .merge(daily_load, on="day", how="left")
     .merge(daily_outside, on="day", how="left")
     .merge(daily_sessions, on="day", how="left")
-    .merge(daily_performance, on="day", how="left")
+    .merge(daily_surprise_send, on="day", how="left")
 )
 
 vgrade_cols = [
@@ -624,15 +624,15 @@ analysis_df["past_week_mean_acwr"] = (
 )
 
 calendar_analysis_df = analysis_df.copy()
-for col in ["total_performance", "n_attempts", "n_sends", "n_fails"]:
+for col in ["total_surprise_send", "n_attempts", "n_sends", "n_fails"]:
     calendar_analysis_df[col] = calendar_analysis_df[col].fillna(0)
 
 calendar_analysis_df["rested_yesterday"] = (
     calendar_analysis_df["n_attempts"].shift(1).fillna(0) == 0
 ).astype(int)
 
-past_month_total_performance = (
-    calendar_analysis_df["total_performance"]
+past_month_total_surprise_send = (
+    calendar_analysis_df["total_surprise_send"]
     .shift(1)
     .rolling(past_month_days, min_periods=1)
     .sum()
@@ -643,13 +643,13 @@ past_month_attempts = (
     .rolling(past_month_days, min_periods=1)
     .sum()
 )
-calendar_analysis_df["past_month_performance"] = (
-    past_month_total_performance /
+calendar_analysis_df["past_month_surprise_send"] = (
+    past_month_total_surprise_send /
     past_month_attempts.replace(0, np.nan)
 )
 
-past_60d_total_performance = (
-    calendar_analysis_df["total_performance"]
+past_60d_total_surprise_send = (
+    calendar_analysis_df["total_surprise_send"]
     .shift(1)
     .rolling(rolling_x50_days, min_periods=1)
     .sum()
@@ -660,8 +660,8 @@ past_60d_attempts = (
     .rolling(rolling_x50_days, min_periods=1)
     .sum()
 )
-calendar_analysis_df["past_60d_performance"] = (
-    past_60d_total_performance /
+calendar_analysis_df["past_60d_surprise_send"] = (
+    past_60d_total_surprise_send /
     past_60d_attempts.replace(0, np.nan)
 )
 
@@ -688,52 +688,52 @@ calendar_analysis_df = calendar_analysis_df.merge(
     how="left"
 )
 
-next_day_total_performance = forward_rolling_sum(
-    calendar_analysis_df["total_performance"],
+next_day_total_surprise_send = forward_rolling_sum(
+    calendar_analysis_df["total_surprise_send"],
     1
 )
 next_day_attempts = forward_rolling_sum(
     calendar_analysis_df["n_attempts"],
     1
 )
-calendar_analysis_df["next_day_mean_performance"] = (
-    next_day_total_performance /
+calendar_analysis_df["next_day_mean_surprise_send"] = (
+    next_day_total_surprise_send /
     next_day_attempts.replace(0, np.nan)
 )
 
-next_week_total_performance = forward_rolling_sum(
-    calendar_analysis_df["total_performance"],
+next_week_total_surprise_send = forward_rolling_sum(
+    calendar_analysis_df["total_surprise_send"],
     next_week_days
 )
 next_week_attempts = forward_rolling_sum(
     calendar_analysis_df["n_attempts"],
     next_week_days
 )
-calendar_analysis_df["next_week_mean_performance"] = (
-    next_week_total_performance /
+calendar_analysis_df["next_week_mean_surprise_send"] = (
+    next_week_total_surprise_send /
     next_week_attempts.replace(0, np.nan)
 )
 
-current_week_total_performance = forward_rolling_sum_including_current(
-    calendar_analysis_df["total_performance"],
+current_week_total_surprise_send = forward_rolling_sum_including_current(
+    calendar_analysis_df["total_surprise_send"],
     next_week_days
 )
 current_week_attempts = forward_rolling_sum_including_current(
     calendar_analysis_df["n_attempts"],
     next_week_days
 )
-calendar_analysis_df["current_week_mean_performance"] = (
-    current_week_total_performance /
+calendar_analysis_df["current_week_mean_surprise_send"] = (
+    current_week_total_surprise_send /
     current_week_attempts.replace(0, np.nan)
 )
 weekly_anchor_df = calendar_analysis_df[
     calendar_analysis_df["day"].dt.dayofweek == 0
 ].copy()
-weekly_anchor_df["next_week_mean_performance"] = (
-    weekly_anchor_df["current_week_mean_performance"]
+weekly_anchor_df["next_week_mean_surprise_send"] = (
+    weekly_anchor_df["current_week_mean_surprise_send"]
 )
 
-analysis_df = analysis_df.dropna(subset=["mean_performance"]).copy()
+analysis_df = analysis_df.dropna(subset=["mean_surprise_send"]).copy()
 
 predictor_specs = [
     ("past_month_attempt_vgrades", "Past-month attempted V-grade total"),
@@ -747,14 +747,14 @@ predictor_specs = [
 
 test_results = pd.DataFrame([
     {
-        **test_predictor(analysis_df, predictor_col, "mean_performance"),
+        **test_predictor(analysis_df, predictor_col, "mean_surprise_send"),
         "label": label
     }
     for predictor_col, label in predictor_specs
 ])
 
-print("\nPast-month volume/load predictors of daily mean performance")
-print("Performance = surprise_send - surprise_fail")
+print("\nPast-month volume/load predictors of daily mean surprise_send")
+print("surprise_send = surprise_send - surprise_fail")
 print("Past-month predictors use the previous 28 calendar days, excluding the current day.")
 print(
     test_results[
@@ -777,15 +777,15 @@ next_week_test_results = pd.DataFrame([
         **test_predictor(
             calendar_analysis_df,
             predictor_col,
-            "next_week_mean_performance"
+            "next_week_mean_surprise_send"
         ),
         "label": label
     }
     for predictor_col, label in predictor_specs
 ])
 
-print("\nPast-month volume/load predictors of next-7-day mean performance")
-print("Outcome is attempt-weighted performance over the next 7 calendar days.")
+print("\nPast-month volume/load predictors of next-7-day mean surprise_send")
+print("Outcome is attempt-weighted surprise_send over the next 7 calendar days.")
 print("Predictors use the previous 28 calendar days, excluding the current day.")
 print(
     next_week_test_results[
@@ -803,69 +803,69 @@ print(
     ]
 )
 
-performance_momentum_specs = [
+surprise_send_momentum_specs = [
     (
         calendar_analysis_df,
-        "past_month_performance",
-        "next_day_mean_performance",
-        "Previous 28-day performance predicts next-day performance"
+        "past_month_surprise_send",
+        "next_day_mean_surprise_send",
+        "Previous 28-day surprise_send predicts next-day surprise_send"
     ),
     (
         weekly_anchor_df,
-        "past_month_performance",
-        "next_week_mean_performance",
-        "Previous 28-day performance predicts next-week performance"
+        "past_month_surprise_send",
+        "next_week_mean_surprise_send",
+        "Previous 28-day surprise_send predicts next-week surprise_send"
     )
 ]
 
-performance_momentum_results = pd.DataFrame([
+surprise_send_momentum_results = pd.DataFrame([
     {
         **test_predictor(test_df, predictor_col, outcome_col),
         "outcome": outcome_col,
         "label": label
     }
-    for test_df, predictor_col, outcome_col, label in performance_momentum_specs
+    for test_df, predictor_col, outcome_col, label in surprise_send_momentum_specs
 ])
 
 multi_predictor_cols = [
     "past_month_attempt_vgrades",
     "past_month_avg_session_duration_min",
-    "past_month_performance"
+    "past_month_surprise_send"
 ]
 
 daily_multi_regression = multiple_linear_regression(
     calendar_analysis_df,
     multi_predictor_cols,
-    "mean_performance"
+    "mean_surprise_send"
 )
 weekly_multi_regression = multiple_linear_regression(
     weekly_anchor_df,
     multi_predictor_cols,
-    "next_week_mean_performance"
+    "next_week_mean_surprise_send"
 )
 
-x50_performance_specs = [
+x50_surprise_send_specs = [
     (
         calendar_analysis_df,
         "rolling_60d_x50",
-        "mean_performance",
-        "Prior 60-day x50 predicts today's performance"
+        "mean_surprise_send",
+        "Prior 60-day x50 predicts today's surprise_send"
     ),
     (
         calendar_analysis_df,
-        "past_60d_performance",
+        "past_60d_surprise_send",
         "rolling_60d_x50",
-        "Prior 60-day performance predicts rolling x50"
+        "Prior 60-day surprise_send predicts rolling x50"
     )
 ]
 
-x50_performance_results = pd.DataFrame([
+x50_surprise_send_results = pd.DataFrame([
     {
         **test_predictor(test_df, predictor_col, outcome_col),
         "outcome": outcome_col,
         "label": label
     }
-    for test_df, predictor_col, outcome_col, label in x50_performance_specs
+    for test_df, predictor_col, outcome_col, label in x50_surprise_send_specs
 ])
 
 acwr_predictor_specs = [
@@ -878,9 +878,9 @@ next_day_acwr_results = pd.DataFrame([
         **test_predictor(
             calendar_analysis_df,
             predictor_col,
-            "next_day_mean_performance"
+            "next_day_mean_surprise_send"
         ),
-        "outcome": "next_day_mean_performance",
+        "outcome": "next_day_mean_surprise_send",
         "label": label
     }
     for predictor_col, label in acwr_predictor_specs
@@ -891,19 +891,19 @@ next_week_acwr_results = pd.DataFrame([
         **test_predictor(
             weekly_anchor_df,
             predictor_col,
-            "next_week_mean_performance"
+            "next_week_mean_surprise_send"
         ),
-        "outcome": "next_week_mean_performance",
+        "outcome": "next_week_mean_surprise_send",
         "label": label
     }
     for predictor_col, label in acwr_predictor_specs
 ])
 
-print("\nPast-28-day performance predicting future performance")
-print("Past performance is attempt-weighted and excludes the current day.")
+print("\nPast-28-day surprise_send predicting future surprise_send")
+print("Past surprise_send is attempt-weighted and excludes the current day.")
 print("Daily outcome is the next calendar day; weekly outcome is Monday-through-Sunday.")
 print(
-    performance_momentum_results[
+    surprise_send_momentum_results[
         [
             "label",
             "n",
@@ -918,7 +918,7 @@ print(
     ]
 )
 
-print("\nMultiple linear regression: past month predictors -> daily performance")
+print("\nMultiple linear regression: past month predictors -> daily surprise_send")
 print(
     pd.DataFrame([
         {
@@ -932,7 +932,7 @@ print(
 )
 print(daily_multi_regression["coef_table"])
 
-print("\nMultiple linear regression: past month predictors -> weekly performance")
+print("\nMultiple linear regression: past month predictors -> weekly surprise_send")
 print(
     pd.DataFrame([
         {
@@ -946,10 +946,10 @@ print(
 )
 print(weekly_multi_regression["coef_table"])
 
-print("\nRolling 60-day x50 and performance")
+print("\nRolling 60-day x50 and surprise_send")
 print("Rolling x50 uses the previous 60 calendar days, excluding the current day.")
 print(
-    x50_performance_results[
+    x50_surprise_send_results[
         [
             "label",
             "n",
@@ -965,45 +965,45 @@ print(
 )
 
 rest_test_df = calendar_analysis_df[
-    ["rested_yesterday", "mean_performance"]
+    ["rested_yesterday", "mean_surprise_send"]
 ].dropna().copy()
-rested_performance = rest_test_df.loc[
+rested_surprise_send = rest_test_df.loc[
     rest_test_df["rested_yesterday"] == 1,
-    "mean_performance"
+    "mean_surprise_send"
 ]
-not_rested_performance = rest_test_df.loc[
+not_rested_surprise_send = rest_test_df.loc[
     rest_test_df["rested_yesterday"] == 0,
-    "mean_performance"
+    "mean_surprise_send"
 ]
 rest_ttest = ttest_ind(
-    rested_performance,
-    not_rested_performance,
+    rested_surprise_send,
+    not_rested_surprise_send,
     equal_var=False,
     nan_policy="omit"
 )
 rest_mann = mannwhitneyu(
-    rested_performance,
-    not_rested_performance,
+    rested_surprise_send,
+    not_rested_surprise_send,
     alternative="two-sided"
 )
 rest_result = test_predictor(
     rest_test_df,
     "rested_yesterday",
-    "mean_performance"
+    "mean_surprise_send"
 )
 
-print("\nDoes resting yesterday predict today's performance?")
+print("\nDoes resting yesterday predict today's surprise_send?")
 print("Resting yesterday means zero climb attempts on the previous calendar day.")
 print(
     pd.DataFrame([
         {
-            "n_rested": len(rested_performance),
-            "n_not_rested": len(not_rested_performance),
-            "mean_after_rest": rested_performance.mean(),
-            "mean_after_climbing": not_rested_performance.mean(),
+            "n_rested": len(rested_surprise_send),
+            "n_not_rested": len(not_rested_surprise_send),
+            "mean_after_rest": rested_surprise_send.mean(),
+            "mean_after_climbing": not_rested_surprise_send.mean(),
             "mean_difference": (
-                rested_performance.mean() -
-                not_rested_performance.mean()
+                rested_surprise_send.mean() -
+                not_rested_surprise_send.mean()
             ),
             "welch_t_p": rest_ttest.pvalue,
             "mann_whitney_p": rest_mann.pvalue,
@@ -1013,7 +1013,7 @@ print(
     ])
 )
 
-print("\nPast-week ACWR predicting next-day performance")
+print("\nPast-week ACWR predicting next-day surprise_send")
 print("ACWR predictors are prior-7-day averages, excluding the current day.")
 print(
     next_day_acwr_results[
@@ -1031,8 +1031,8 @@ print(
     ]
 )
 
-print("\nPast-week ACWR predicting next-week performance")
-print("Weekly outcome is Monday-through-Sunday performance at Monday anchors.")
+print("\nPast-week ACWR predicting next-week surprise_send")
+print("Weekly outcome is Monday-through-Sunday surprise_send at Monday anchors.")
 print(
     next_week_acwr_results[
         [
@@ -1079,7 +1079,7 @@ print(
 )
 
 
-# ---- past-month inside/outside performance cross-prediction ----
+# ---- past-month inside/outside surprise_send cross-prediction ----
 venue_perf = df.copy()
 venue_perf["venue"] = np.where(venue_perf["outside"] == 1, "outside", "inside")
 
@@ -1087,15 +1087,15 @@ daily_venue_perf = (
     venue_perf
     .groupby(["day", "venue"])
     .agg(
-        total_performance=("performance", "sum"),
-        n_attempts=("performance", "size")
+        total_surprise_send=("surprise_send", "sum"),
+        n_attempts=("surprise_send", "size")
     )
     .reset_index()
 )
 
 daily_venue_perf = (
     daily_venue_perf
-    .pivot(index="day", columns="venue", values=["total_performance", "n_attempts"])
+    .pivot(index="day", columns="venue", values=["total_surprise_send", "n_attempts"])
 )
 daily_venue_perf.columns = [
     f"{metric}_{venue}" for metric, venue in daily_venue_perf.columns
@@ -1108,8 +1108,8 @@ venue_analysis_df = (
 )
 
 for col in [
-    "total_performance_inside",
-    "total_performance_outside",
+    "total_surprise_send_inside",
+    "total_surprise_send_outside",
     "n_attempts_inside",
     "n_attempts_outside"
 ]:
@@ -1118,31 +1118,31 @@ for col in [
 
 venue_analysis_df[
     [
-        "total_performance_inside",
-        "total_performance_outside",
+        "total_surprise_send_inside",
+        "total_surprise_send_outside",
         "n_attempts_inside",
         "n_attempts_outside"
     ]
 ] = venue_analysis_df[
     [
-        "total_performance_inside",
-        "total_performance_outside",
+        "total_surprise_send_inside",
+        "total_surprise_send_outside",
         "n_attempts_inside",
         "n_attempts_outside"
     ]
 ].fillna(0)
 
-venue_analysis_df["mean_performance_inside"] = (
-    venue_analysis_df["total_performance_inside"] /
+venue_analysis_df["mean_surprise_send_inside"] = (
+    venue_analysis_df["total_surprise_send_inside"] /
     venue_analysis_df["n_attempts_inside"].replace(0, np.nan)
 )
-venue_analysis_df["mean_performance_outside"] = (
-    venue_analysis_df["total_performance_outside"] /
+venue_analysis_df["mean_surprise_send_outside"] = (
+    venue_analysis_df["total_surprise_send_outside"] /
     venue_analysis_df["n_attempts_outside"].replace(0, np.nan)
 )
 
-past_month_inside_total_performance = (
-    venue_analysis_df["total_performance_inside"]
+past_month_inside_total_surprise_send = (
+    venue_analysis_df["total_surprise_send_inside"]
     .shift(1)
     .rolling(past_month_days, min_periods=1)
     .sum()
@@ -1153,8 +1153,8 @@ past_month_inside_attempts = (
     .rolling(past_month_days, min_periods=1)
     .sum()
 )
-past_month_outside_total_performance = (
-    venue_analysis_df["total_performance_outside"]
+past_month_outside_total_surprise_send = (
+    venue_analysis_df["total_surprise_send_outside"]
     .shift(1)
     .rolling(past_month_days, min_periods=1)
     .sum()
@@ -1166,25 +1166,25 @@ past_month_outside_attempts = (
     .sum()
 )
 
-venue_analysis_df["past_month_inside_performance"] = (
-    past_month_inside_total_performance /
+venue_analysis_df["past_month_inside_surprise_send"] = (
+    past_month_inside_total_surprise_send /
     past_month_inside_attempts.replace(0, np.nan)
 )
-venue_analysis_df["past_month_outside_performance"] = (
-    past_month_outside_total_performance /
+venue_analysis_df["past_month_outside_surprise_send"] = (
+    past_month_outside_total_surprise_send /
     past_month_outside_attempts.replace(0, np.nan)
 )
 
-next_week_inside_total_performance = forward_rolling_sum(
-    venue_analysis_df["total_performance_inside"],
+next_week_inside_total_surprise_send = forward_rolling_sum(
+    venue_analysis_df["total_surprise_send_inside"],
     next_week_days
 )
 next_week_inside_attempts = forward_rolling_sum(
     venue_analysis_df["n_attempts_inside"],
     next_week_days
 )
-next_week_outside_total_performance = forward_rolling_sum(
-    venue_analysis_df["total_performance_outside"],
+next_week_outside_total_surprise_send = forward_rolling_sum(
+    venue_analysis_df["total_surprise_send_outside"],
     next_week_days
 )
 next_week_outside_attempts = forward_rolling_sum(
@@ -1192,38 +1192,38 @@ next_week_outside_attempts = forward_rolling_sum(
     next_week_days
 )
 
-venue_analysis_df["next_week_inside_performance"] = (
-    next_week_inside_total_performance /
+venue_analysis_df["next_week_inside_surprise_send"] = (
+    next_week_inside_total_surprise_send /
     next_week_inside_attempts.replace(0, np.nan)
 )
-venue_analysis_df["next_week_outside_performance"] = (
-    next_week_outside_total_performance /
+venue_analysis_df["next_week_outside_surprise_send"] = (
+    next_week_outside_total_surprise_send /
     next_week_outside_attempts.replace(0, np.nan)
 )
 
 venue_predictor_specs = [
     (
-        "past_month_inside_performance",
-        "mean_performance_outside",
-        "Past-month inside performance predicts outside performance"
+        "past_month_inside_surprise_send",
+        "mean_surprise_send_outside",
+        "Past-month inside surprise_send predicts outside surprise_send"
     ),
     (
-        "past_month_outside_performance",
-        "mean_performance_inside",
-        "Past-month outside performance predicts inside performance"
+        "past_month_outside_surprise_send",
+        "mean_surprise_send_inside",
+        "Past-month outside surprise_send predicts inside surprise_send"
     )
 ]
 
 next_week_venue_predictor_specs = [
     (
-        "past_month_inside_performance",
-        "next_week_outside_performance",
-        "Past-month inside performance predicts next-week outside performance"
+        "past_month_inside_surprise_send",
+        "next_week_outside_surprise_send",
+        "Past-month inside surprise_send predicts next-week outside surprise_send"
     ),
     (
-        "past_month_outside_performance",
-        "next_week_inside_performance",
-        "Past-month outside performance predicts next-week inside performance"
+        "past_month_outside_surprise_send",
+        "next_week_inside_surprise_send",
+        "Past-month outside surprise_send predicts next-week inside surprise_send"
     )
 ]
 
@@ -1236,8 +1236,8 @@ venue_test_results = pd.DataFrame([
     for predictor_col, outcome_col, label in venue_predictor_specs
 ])
 
-print("\nPast-month inside/outside performance cross-prediction")
-print("Past-month performance is attempt-weighted over the previous 28 calendar days.")
+print("\nPast-month inside/outside surprise_send cross-prediction")
+print("Past-month surprise_send is attempt-weighted over the previous 28 calendar days.")
 print(
     venue_test_results[
         [
@@ -1263,8 +1263,8 @@ next_week_venue_test_results = pd.DataFrame([
     for predictor_col, outcome_col, label in next_week_venue_predictor_specs
 ])
 
-print("\nPast-month inside/outside performance predicts next-week performance")
-print("Past-month performance is attempt-weighted over the previous 28 calendar days.")
+print("\nPast-month inside/outside surprise_send predicts next-week surprise_send")
+print("Past-month surprise_send is attempt-weighted over the previous 28 calendar days.")
 print("Outcome is attempt-weighted over the next 7 calendar days.")
 print(
     next_week_venue_test_results[
@@ -1305,7 +1305,7 @@ for ax, (predictor_col, label) in zip(axes, predictor_specs):
     plot_df = analysis_df[
         [
             predictor_col,
-            "mean_performance",
+            "mean_surprise_send",
             "daily_avg_attempt_vgrade",
             "daily_venue"
         ]
@@ -1313,13 +1313,13 @@ for ax, (predictor_col, label) in zip(axes, predictor_specs):
     result = test_results.loc[test_results["predictor"] == predictor_col].iloc[0]
 
     x = plot_df[predictor_col].to_numpy(dtype=float)
-    y = plot_df["mean_performance"].to_numpy(dtype=float)
+    y = plot_df["mean_surprise_send"].to_numpy(dtype=float)
 
     for venue, marker in venue_markers.items():
         venue_df = plot_df[plot_df["daily_venue"] == venue]
         ax.scatter(
             venue_df[predictor_col],
-            venue_df["mean_performance"],
+            venue_df["mean_surprise_send"],
             c=venue_df["daily_avg_attempt_vgrade"],
             cmap=grade_cmap,
             norm=grade_norm,
@@ -1337,7 +1337,7 @@ for ax, (predictor_col, label) in zip(axes, predictor_specs):
 
     ax.axhline(0, linestyle="--", linewidth=1)
     ax.set_xlabel(label)
-    ax.set_ylabel(f"Daily mean performance [{unit_label}]")
+    ax.set_ylabel(f"Daily mean surprise_send [{unit_label}]")
     ax.set_title(
         f"R2={result['r_squared']:.3f}, "
         f"p={result['linear_p']:.3g}"
@@ -1353,7 +1353,7 @@ fig.colorbar(
     shrink=0.8,
     label="Today's average attempted V-grade"
 )
-fig.suptitle("Does prior-month volume/load predict daily performance?")
+fig.suptitle("Does prior-month volume/load predict daily surprise_send?")
 fig.tight_layout(rect=[0, 0, 0.93, 1])
 
 
@@ -1362,14 +1362,14 @@ axes = axes.ravel()
 
 for ax, (predictor_col, label) in zip(axes, predictor_specs):
     plot_df = calendar_analysis_df[
-        [predictor_col, "next_week_mean_performance"]
+        [predictor_col, "next_week_mean_surprise_send"]
     ].dropna().copy()
     result = next_week_test_results.loc[
         next_week_test_results["predictor"] == predictor_col
     ].iloc[0]
 
     x = plot_df[predictor_col].to_numpy(dtype=float)
-    y = plot_df["next_week_mean_performance"].to_numpy(dtype=float)
+    y = plot_df["next_week_mean_surprise_send"].to_numpy(dtype=float)
 
     ax.scatter(x, y, alpha=0.45, s=24)
 
@@ -1380,7 +1380,7 @@ for ax, (predictor_col, label) in zip(axes, predictor_specs):
 
     ax.axhline(0, linestyle="--", linewidth=1)
     ax.set_xlabel(label)
-    ax.set_ylabel(f"Next-7-day mean performance [{unit_label}]")
+    ax.set_ylabel(f"Next-7-day mean surprise_send [{unit_label}]")
     ax.set_title(
         f"R2={result['r_squared']:.3f}, "
         f"p={result['linear_p']:.3g}"
@@ -1389,7 +1389,7 @@ for ax, (predictor_col, label) in zip(axes, predictor_specs):
 for ax in axes[len(predictor_specs):]:
     ax.axis("off")
 
-fig.suptitle("Does prior-month volume/load predict next-7-day performance?")
+fig.suptitle("Does prior-month volume/load predict next-7-day surprise_send?")
 fig.tight_layout()
 
 
@@ -1397,11 +1397,11 @@ fig, axes = plt.subplots(1, 2, figsize=(12, 5))
 
 for ax, (test_df, predictor_col, outcome_col, label) in zip(
     axes,
-    performance_momentum_specs
+    surprise_send_momentum_specs
 ):
     plot_df = test_df[[predictor_col, outcome_col]].dropna().copy()
-    result = performance_momentum_results.loc[
-        performance_momentum_results["label"] == label
+    result = surprise_send_momentum_results.loc[
+        surprise_send_momentum_results["label"] == label
     ].iloc[0]
 
     x = plot_df[predictor_col].to_numpy(dtype=float)
@@ -1416,14 +1416,14 @@ for ax, (test_df, predictor_col, outcome_col, label) in zip(
 
     ax.axhline(0, linestyle="--", linewidth=1)
     ax.axvline(0, linestyle="--", linewidth=1)
-    ax.set_xlabel(f"Past-28-day performance [{unit_label}]")
-    ax.set_ylabel(f"Future performance [{unit_label}]")
+    ax.set_xlabel(f"Past-28-day surprise_send [{unit_label}]")
+    ax.set_ylabel(f"Future surprise_send [{unit_label}]")
     ax.set_title(
         f"{label}\n"
         f"R2={result['r_squared']:.3f}, p={result['linear_p']:.3g}"
     )
 
-fig.suptitle("Performance momentum tests")
+fig.suptitle("surprise_send momentum tests")
 fig.tight_layout()
 
 
@@ -1433,14 +1433,14 @@ multi_plot_specs = [
     (
         axes[0, 0],
         daily_multi_regression,
-        "mean_performance",
-        "Daily performance vs multivariable score"
+        "mean_surprise_send",
+        "Daily surprise_send vs multivariable score"
     ),
     (
         axes[0, 1],
         weekly_multi_regression,
-        "next_week_mean_performance",
-        "Weekly performance vs multivariable score"
+        "next_week_mean_surprise_send",
+        "Weekly surprise_send vs multivariable score"
     )
 ]
 
@@ -1461,7 +1461,7 @@ for ax, result, outcome_col, title in multi_plot_specs:
     ax.axhline(0, linestyle=":", linewidth=1)
     ax.axvline(0, linestyle=":", linewidth=1)
     ax.set_xlabel(f"Multivariable predictor score [{unit_label}]")
-    ax.set_ylabel(f"Actual performance [{unit_label}]")
+    ax.set_ylabel(f"Actual surprise_send [{unit_label}]")
     ax.set_title(
         f"{title}\n"
         f"R2={result['r_squared']:.3f}, "
@@ -1484,7 +1484,7 @@ for ax, result, title in [
     ax.set_title(title)
     ax.tick_params(axis="x", rotation=25)
 
-fig.suptitle("Multivariable models: past-month predictors of performance")
+fig.suptitle("Multivariable models: past-month predictors of surprise_send")
 fig.tight_layout()
 
 
@@ -1492,11 +1492,11 @@ fig, axes = plt.subplots(1, 2, figsize=(12, 5))
 
 for ax, (test_df, predictor_col, outcome_col, label) in zip(
     axes,
-    x50_performance_specs
+    x50_surprise_send_specs
 ):
     plot_df = test_df[[predictor_col, outcome_col]].dropna().copy()
-    result = x50_performance_results.loc[
-        x50_performance_results["label"] == label
+    result = x50_surprise_send_results.loc[
+        x50_surprise_send_results["label"] == label
     ].iloc[0]
 
     x = plot_df[predictor_col].to_numpy(dtype=float)
@@ -1517,7 +1517,7 @@ for ax, (test_df, predictor_col, outcome_col, label) in zip(
         f"R2={result['r_squared']:.3f}, p={result['linear_p']:.3g}"
     )
 
-fig.suptitle("Rolling x50 and performance tests")
+fig.suptitle("Rolling x50 and surprise_send tests")
 fig.tight_layout()
 
 
@@ -1525,27 +1525,27 @@ fig, ax = plt.subplots(figsize=(7, 5))
 rng = np.random.default_rng(42)
 
 ax.boxplot(
-    [not_rested_performance, rested_performance],
+    [not_rested_surprise_send, rested_surprise_send],
     labels=["Climbed yesterday", "Rested yesterday"],
     showfliers=False
 )
 ax.scatter(
-    rng.normal(1, 0.035, len(not_rested_performance)),
-    not_rested_performance,
+    rng.normal(1, 0.035, len(not_rested_surprise_send)),
+    not_rested_surprise_send,
     alpha=0.25,
     s=18
 )
 ax.scatter(
-    rng.normal(2, 0.035, len(rested_performance)),
-    rested_performance,
+    rng.normal(2, 0.035, len(rested_surprise_send)),
+    rested_surprise_send,
     alpha=0.5,
     s=22
 )
 ax.axhline(0, linestyle="--", linewidth=1)
-ax.set_ylabel(f"Today's mean performance [{unit_label}]")
+ax.set_ylabel(f"Today's mean surprise_send [{unit_label}]")
 ax.set_title(
-    "Does resting yesterday predict today's performance?\n"
-    f"diff={rested_performance.mean() - not_rested_performance.mean():.3f}, "
+    "Does resting yesterday predict today's surprise_send?\n"
+    f"diff={rested_surprise_send.mean() - not_rested_surprise_send.mean():.3f}, "
     f"t p={rest_ttest.pvalue:.3g}, MW p={rest_mann.pvalue:.3g}"
 )
 fig.tight_layout()
@@ -1555,14 +1555,14 @@ fig, axes = plt.subplots(2, 2, figsize=(12, 9))
 
 for ax, (predictor_col, label) in zip(axes[0], acwr_predictor_specs):
     plot_df = calendar_analysis_df[
-        [predictor_col, "next_day_mean_performance"]
+        [predictor_col, "next_day_mean_surprise_send"]
     ].dropna().copy()
     result = next_day_acwr_results.loc[
         next_day_acwr_results["predictor"] == predictor_col
     ].iloc[0]
 
     x = plot_df[predictor_col].to_numpy(dtype=float)
-    y = plot_df["next_day_mean_performance"].to_numpy(dtype=float)
+    y = plot_df["next_day_mean_surprise_send"].to_numpy(dtype=float)
 
     ax.scatter(x, y, alpha=0.45, s=24)
 
@@ -1573,7 +1573,7 @@ for ax, (predictor_col, label) in zip(axes[0], acwr_predictor_specs):
 
     ax.axhline(0, linestyle="--", linewidth=1)
     ax.set_xlabel(label)
-    ax.set_ylabel(f"Next-day performance [{unit_label}]")
+    ax.set_ylabel(f"Next-day surprise_send [{unit_label}]")
     ax.set_title(
         f"Next day: R2={result['r_squared']:.3f}, "
         f"p={result['linear_p']:.3g}"
@@ -1581,14 +1581,14 @@ for ax, (predictor_col, label) in zip(axes[0], acwr_predictor_specs):
 
 for ax, (predictor_col, label) in zip(axes[1], acwr_predictor_specs):
     plot_df = weekly_anchor_df[
-        [predictor_col, "next_week_mean_performance"]
+        [predictor_col, "next_week_mean_surprise_send"]
     ].dropna().copy()
     result = next_week_acwr_results.loc[
         next_week_acwr_results["predictor"] == predictor_col
     ].iloc[0]
 
     x = plot_df[predictor_col].to_numpy(dtype=float)
-    y = plot_df["next_week_mean_performance"].to_numpy(dtype=float)
+    y = plot_df["next_week_mean_surprise_send"].to_numpy(dtype=float)
 
     ax.scatter(x, y, alpha=0.45, s=24)
 
@@ -1599,13 +1599,13 @@ for ax, (predictor_col, label) in zip(axes[1], acwr_predictor_specs):
 
     ax.axhline(0, linestyle="--", linewidth=1)
     ax.set_xlabel(label)
-    ax.set_ylabel(f"Next-week performance [{unit_label}]")
+    ax.set_ylabel(f"Next-week surprise_send [{unit_label}]")
     ax.set_title(
         f"Next week: R2={result['r_squared']:.3f}, "
         f"p={result['linear_p']:.3g}"
     )
 
-fig.suptitle("Past-week ACWR predicting future performance")
+fig.suptitle("Past-week ACWR predicting future surprise_send")
 fig.tight_layout()
 
 
@@ -1671,13 +1671,13 @@ for ax, (predictor_col, outcome_col, label) in zip(axes, venue_predictor_specs):
     ax.axhline(0, linestyle="--", linewidth=1)
     ax.axvline(0, linestyle="--", linewidth=1)
     ax.set_xlabel(f"Past-month predictor [{unit_label}]")
-    ax.set_ylabel(f"Daily outcome performance [{unit_label}]")
+    ax.set_ylabel(f"Daily outcome surprise_send [{unit_label}]")
     ax.set_title(
         f"{label}\n"
         f"R2={result['r_squared']:.3f}, p={result['linear_p']:.3g}"
     )
 
-fig.suptitle("Inside/outside performance cross-prediction")
+fig.suptitle("Inside/outside surprise_send cross-prediction")
 fig.tight_layout()
 
 
@@ -1705,13 +1705,13 @@ for ax, (predictor_col, outcome_col, label) in zip(
     ax.axhline(0, linestyle="--", linewidth=1)
     ax.axvline(0, linestyle="--", linewidth=1)
     ax.set_xlabel(f"Past-month predictor [{unit_label}]")
-    ax.set_ylabel(f"Next-7-day outcome performance [{unit_label}]")
+    ax.set_ylabel(f"Next-7-day outcome surprise_send [{unit_label}]")
     ax.set_title(
         f"{label}\n"
         f"R2={result['r_squared']:.3f}, p={result['linear_p']:.3g}"
     )
 
-fig.suptitle("Inside/outside next-week performance cross-prediction")
+fig.suptitle("Inside/outside next-week surprise_send cross-prediction")
 fig.tight_layout()
 
 
