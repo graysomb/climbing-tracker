@@ -30,7 +30,6 @@ import android.widget.Toast
 import androidx.annotation.RequiresApi
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -43,7 +42,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddCircle
@@ -400,64 +398,84 @@ private fun HomeBody(
                         onEventSave = onEventSave,
                         modifier = Modifier
                             .fillMaxSize()
-                            .verticalScroll(rememberScrollState())
                             .padding(horizontal = dimensionResource(id = R.dimen.padding_small))
                     )
-                    2 -> Column(
+                    2 -> LazyColumn(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(dimensionResource(id = R.dimen.padding_medium)),
                         modifier = Modifier
                             .fillMaxSize()
-                            .verticalScroll(rememberScrollState())
                             .padding(horizontal = dimensionResource(id = R.dimen.padding_small))
                     ) {
-                        Row {
-                            Button(onClick = { moFilt = (moFilt + 1) % 2 }) {
-                                Text(when (moFilt) {
-                                    0 -> "all time"
-                                    else -> "last 3 months"
-                                })
+                        item {
+                            Row {
+                                Button(onClick = { moFilt = (moFilt + 1) % 2 }) {
+                                    Text(when (moFilt) {
+                                        0 -> "all time"
+                                        else -> "last 3 months"
+                                    })
+                                }
                             }
                         }
-                        ItemBarChart(
-                            filteredItems,
-                            Modifier.height(280.dp),
-                            plotByWeek,
-                            showLoadOverlay = true,
-                            baselineMonths = baselineMonths
-                        )
-                        VPointsMovingAverageChart(filteredItems, Modifier.height(280.dp))
-                        WeeklySentGradeChart(filteredItems, Modifier.height(280.dp))
-                        Button(
-                            onClick = {
-                                if (!gradeProgressionIsCalculating) {
-                                    val itemsForCalculation = filteredItems
-                                    val filterForCalculation = locationFilter
-                                    gradeProgressionIsCalculating = true
-                                    coroutineScope.launch {
-                                        val calculatedData = withContext(Dispatchers.Default) {
-                                            calculateGradeProgressionData(itemsForCalculation)
+                        item {
+                            ItemBarChart(
+                                filteredItems,
+                                Modifier.height(280.dp),
+                                plotByWeek,
+                                showLoadOverlay = true,
+                                baselineMonths = baselineMonths
+                            )
+                        }
+                        item {
+                            VPointsMovingAverageChart(filteredItems, Modifier.height(280.dp))
+                        }
+                        item {
+                            WeeklySentGradeChart(filteredItems, Modifier.height(280.dp))
+                        }
+                        item {
+                            Button(
+                                onClick = {
+                                    if (!gradeProgressionIsCalculating) {
+                                        val itemsForCalculation = filteredItems
+                                        val filterForCalculation = locationFilter
+                                        gradeProgressionIsCalculating = true
+                                        coroutineScope.launch {
+                                            val calculatedData = withContext(Dispatchers.Default) {
+                                                calculateGradeProgressionData(itemsForCalculation)
+                                            }
+                                            gradeProgressionDataByFilter =
+                                                gradeProgressionDataByFilter + (filterForCalculation to calculatedData)
+                                            gradeProgressionIsCalculating = false
                                         }
-                                        gradeProgressionDataByFilter =
-                                            gradeProgressionDataByFilter + (filterForCalculation to calculatedData)
-                                        gradeProgressionIsCalculating = false
                                     }
-                                }
-                            },
-                            enabled = !gradeProgressionIsCalculating
-                        ) {
-                            Text(text = if (gradeProgressionData == null) "Calculate Flash/Red/Proj" else "Update Flash/Red/Proj")
+                                },
+                                enabled = !gradeProgressionIsCalculating
+                            ) {
+                                Text(text = if (gradeProgressionData == null) "Calculate Flash/Red/Proj" else "Update Flash/Red/Proj")
+                            }
                         }
                         if (gradeProgressionIsCalculating) {
-                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                            item {
+                                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                            }
                         }
                         gradeProgressionData?.let { data ->
-                            ItemGradeProgressionChart(data, Modifier.height(280.dp))
+                            item {
+                                ItemGradeProgressionChart(data, Modifier.height(280.dp))
+                            }
                         }
-                        ItemBarChartHP(filteredItems, Modifier.height(280.dp), plotByWeek)
-                        ItemBarChartProb(filteredItems, Modifier.height(280.dp), 0, moFilt)
-                        ItemBarChartProb(filteredItems, Modifier.height(280.dp), 1, moFilt)
-                        ItemBarChartProb(filteredItems, Modifier.height(280.dp), 2, moFilt)
+                        item {
+                            ItemBarChartHP(filteredItems, Modifier.height(280.dp), plotByWeek)
+                        }
+                        item {
+                            ItemBarChartProb(filteredItems, Modifier.height(280.dp), 0, moFilt)
+                        }
+                        item {
+                            ItemBarChartProb(filteredItems, Modifier.height(280.dp), 1, moFilt)
+                        }
+                        item {
+                            ItemBarChartProb(filteredItems, Modifier.height(280.dp), 2, moFilt)
+                        }
                     }
                     else -> Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -527,100 +545,110 @@ private fun EventPage(
     var rps by remember { mutableStateOf("0") }
     val context = LocalContext.current
 
-    Column(
+    LazyColumn(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(dimensionResource(id = R.dimen.padding_medium)),
         modifier = modifier
     ) {
-        Text(
-            text = "Events",
-            style = MaterialTheme.typography.titleLarge
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(dimensionResource(id = R.dimen.padding_small))) {
-            Button(onClick = { eventType = 0 }) {
-                Text(text = "Injury")
-            }
-            Button(onClick = { eventType = 1 }) {
-                Text(text = "Bodyweight")
-            }
-            Button(onClick = { eventType = 2 }) {
-                Text(text = "RPS")
-            }
+        item {
+            Text(
+                text = "Events",
+                style = MaterialTheme.typography.titleLarge
+            )
         }
-        Text(
-            text = eventTypeLabel(eventType),
-            style = MaterialTheme.typography.titleMedium
-        )
-
-        when (eventType) {
-            0 -> {
-                OutlinedTextField(
-                    value = injuryNote,
-                    onValueChange = { injuryNote = it },
-                    label = { Text(text = "Injury note") },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                        unfocusedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                        disabledContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-            1 -> {
-                OutlinedTextField(
-                    value = bodyweight,
-                    onValueChange = { value ->
-                        bodyweight = value.filter { it.isDigit() || it == '.' }.take(6)
-                    },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    label = { Text(text = "Bodyweight") },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                        unfocusedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                        disabledContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                    ),
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-            }
-            2 -> {
-                OutlinedTextField(
-                    value = rps,
-                    onValueChange = { value ->
-                        val digits = value.filter { it.isDigit() }.take(2)
-                        rps = digits.toIntOrNull()?.coerceIn(0, 10)?.toString() ?: ""
-                    },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    label = { Text(text = "RPS (0-10)") },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                        unfocusedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                        disabledContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                    ),
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-            }
-        }
-
-        Button(
-            onClick = {
-                val now = LocalDateTime.now().toString()
-                val event = when (eventType) {
-                    0 -> Event(time = now, type = 0, note = injuryNote.trim())
-                    1 -> Event(time = now, type = 1, value = bodyweight.toDoubleOrNull() ?: 0.0)
-                    else -> Event(time = now, type = 2, value = rps.toDoubleOrNull()?.coerceIn(0.0, 10.0) ?: 0.0)
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(dimensionResource(id = R.dimen.padding_small))) {
+                Button(onClick = { eventType = 0 }) {
+                    Text(text = "Injury")
                 }
-                onEventSave(event)
-                if (eventType == 0) injuryNote = ""
-                Toast.makeText(context, "Saved ${eventTypeLabel(eventType)}", Toast.LENGTH_SHORT).show()
-            },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(text = "Save ${eventTypeLabel(eventType)}")
+                Button(onClick = { eventType = 1 }) {
+                    Text(text = "Bodyweight")
+                }
+                Button(onClick = { eventType = 2 }) {
+                    Text(text = "RPS")
+                }
+            }
+        }
+        item {
+            Text(
+                text = eventTypeLabel(eventType),
+                style = MaterialTheme.typography.titleMedium
+            )
         }
 
-        eventList.take(20).forEach { event ->
+        item {
+            when (eventType) {
+                0 -> {
+                    OutlinedTextField(
+                        value = injuryNote,
+                        onValueChange = { injuryNote = it },
+                        label = { Text(text = "Injury note") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            unfocusedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            disabledContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                1 -> {
+                    OutlinedTextField(
+                        value = bodyweight,
+                        onValueChange = { value ->
+                            bodyweight = value.filter { it.isDigit() || it == '.' }.take(6)
+                        },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        label = { Text(text = "Bodyweight") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            unfocusedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            disabledContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                }
+                2 -> {
+                    OutlinedTextField(
+                        value = rps,
+                        onValueChange = { value ->
+                            val digits = value.filter { it.isDigit() }.take(2)
+                            rps = digits.toIntOrNull()?.coerceIn(0, 10)?.toString() ?: ""
+                        },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        label = { Text(text = "RPS (0-10)") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            unfocusedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            disabledContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                }
+            }
+        }
+
+        item {
+            Button(
+                onClick = {
+                    val now = LocalDateTime.now().toString()
+                    val event = when (eventType) {
+                        0 -> Event(time = now, type = 0, note = injuryNote.trim())
+                        1 -> Event(time = now, type = 1, value = bodyweight.toDoubleOrNull() ?: 0.0)
+                        else -> Event(time = now, type = 2, value = rps.toDoubleOrNull()?.coerceIn(0.0, 10.0) ?: 0.0)
+                    }
+                    onEventSave(event)
+                    if (eventType == 0) injuryNote = ""
+                    Toast.makeText(context, "Saved ${eventTypeLabel(eventType)}", Toast.LENGTH_SHORT).show()
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(text = "Save ${eventTypeLabel(eventType)}")
+            }
+        }
+
+        items(eventList.take(20), key = { it.id }) { event ->
             EventListItem(
                 event = event,
                 modifier = Modifier.clickable { onEventClick(event.id) }
