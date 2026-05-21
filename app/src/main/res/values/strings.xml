@@ -23,6 +23,8 @@
     <string name="edit_item_title">Edit climb</string>
     <string name="item">Time</string>
     <string name="item_detail_title">Climb Details</string>
+    <string name="event_detail_title">Event Details</string>
+    <string name="edit_event_title">Edit event</string>
     <string name="item_entry_title">Add Climb</string>
     <string name="item_name_req">Time</string>
     <string name="item_price_req">Grade</string>

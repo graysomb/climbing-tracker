@@ -39,6 +39,9 @@ interface ItemDao {
     @Query("SELECT * from events ORDER BY id DESC")
     fun getAllEvents(): Flow<List<Event>>
 
+    @Query("SELECT * from events WHERE id = :id")
+    fun getEvent(id: Int): Flow<Event>
+
     @Query("SELECT * from items WHERE id = :id")
     fun getItem(id: Int): Flow<Item>
 
@@ -49,6 +52,12 @@ interface ItemDao {
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(event: Event)
+
+    @Update
+    suspend fun update(event: Event)
+
+    @Delete
+    suspend fun delete(event: Event)
 
     @Update
     suspend fun update(item: Item)

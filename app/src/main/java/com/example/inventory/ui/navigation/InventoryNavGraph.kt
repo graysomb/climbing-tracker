@@ -23,6 +23,10 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import com.example.inventory.ui.event.EventDetailsDestination
+import com.example.inventory.ui.event.EventDetailsScreen
+import com.example.inventory.ui.event.EventEditDestination
+import com.example.inventory.ui.event.EventEditScreen
 import com.example.inventory.ui.home.HomeDestination
 import com.example.inventory.ui.home.HomeScreen
 import com.example.inventory.ui.item.ItemDetailsDestination
@@ -50,6 +54,9 @@ fun InventoryNavHost(
                 navigateToItemEntry = { navController.navigate(ItemEntryDestination.route) },
                 navigateToItemUpdate = {
                     navController.navigate("${ItemDetailsDestination.route}/${it}")
+                },
+                navigateToEventDetails = {
+                    navController.navigate("${EventDetailsDestination.route}/${it}")
                 }
             )
         }
@@ -77,6 +84,28 @@ fun InventoryNavHost(
             })
         ) {
             ItemEditScreen(
+                navigateBack = { navController.popBackStack() },
+                onNavigateUp = { navController.navigateUp() }
+            )
+        }
+        composable(
+            route = EventDetailsDestination.routeWithArgs,
+            arguments = listOf(navArgument(EventDetailsDestination.eventIdArg) {
+                type = NavType.IntType
+            })
+        ) {
+            EventDetailsScreen(
+                navigateToEditEvent = { navController.navigate("${EventEditDestination.route}/$it") },
+                navigateBack = { navController.navigateUp() }
+            )
+        }
+        composable(
+            route = EventEditDestination.routeWithArgs,
+            arguments = listOf(navArgument(EventEditDestination.eventIdArg) {
+                type = NavType.IntType
+            })
+        ) {
+            EventEditScreen(
                 navigateBack = { navController.popBackStack() },
                 onNavigateUp = { navController.navigateUp() }
             )

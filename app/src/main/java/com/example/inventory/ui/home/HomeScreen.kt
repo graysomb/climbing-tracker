@@ -144,6 +144,7 @@ object HomeDestination : NavigationDestination {
 fun HomeScreen(
     navigateToItemEntry: () -> Unit,
     navigateToItemUpdate: (Int) -> Unit,
+    navigateToEventDetails: (Int) -> Unit,
     modifier: Modifier = Modifier,
     viewModel: HomeViewModel = viewModel(factory = AppViewModelProvider.Factory)
 ) {
@@ -196,6 +197,7 @@ fun HomeScreen(
             itemList = homeUiState.itemList,
             eventList = homeUiState.eventList,
             onItemClick = navigateToItemUpdate,
+            onEventClick = navigateToEventDetails,
             onEventSave = viewModel::addEvent,
             modifier = modifier
                 .padding(innerPadding)
@@ -211,6 +213,7 @@ private fun HomeBody(
     itemList: List<Item>,
     eventList: List<Event>,
     onItemClick: (Int) -> Unit,
+    onEventClick: (Int) -> Unit,
     onEventSave: (Event) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -397,6 +400,7 @@ private fun HomeBody(
                     }
                     1 -> EventPage(
                         eventList = eventList,
+                        onEventClick = onEventClick,
                         onEventSave = onEventSave,
                         modifier = Modifier
                             .fillMaxSize()
@@ -517,6 +521,7 @@ private fun eventTypeLabel(type: Int): String {
 @Composable
 private fun EventPage(
     eventList: List<Event>,
+    onEventClick: (Int) -> Unit,
     onEventSave: (Event) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -620,7 +625,10 @@ private fun EventPage(
         }
 
         eventList.take(20).forEach { event ->
-            EventListItem(event = event)
+            EventListItem(
+                event = event,
+                modifier = Modifier.clickable { onEventClick(event.id) }
+            )
         }
     }
 }
@@ -2288,6 +2296,7 @@ fun HomeBodyPreview() {
             ),
             eventList = listOf(),
             onItemClick = {},
+            onEventClick = {},
             onEventSave = {}
         )
     }
@@ -2301,6 +2310,7 @@ fun HomeBodyEmptyListPreview() {
             itemList = listOf(),
             eventList = listOf(),
             onItemClick = {},
+            onEventClick = {},
             onEventSave = {}
         )
     }

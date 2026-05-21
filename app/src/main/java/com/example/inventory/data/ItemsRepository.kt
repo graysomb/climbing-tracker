@@ -29,6 +29,8 @@ interface ItemsRepository {
 
     fun getAllEventsStream(): Flow<List<Event>>
 
+    fun getEventStream(id: Int): Flow<Event?>
+
     fun getLastItemStream(): Flow<Item>
 
     /**
@@ -42,6 +44,10 @@ interface ItemsRepository {
     suspend fun insertItem(item: Item)
 
     suspend fun insertEvent(event: Event)
+
+    suspend fun updateEvent(event: Event)
+
+    suspend fun deleteEvent(event: Event)
 
     /**
      * Delete item from the data source
