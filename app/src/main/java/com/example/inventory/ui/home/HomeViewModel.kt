@@ -18,6 +18,7 @@ package com.example.inventory.ui.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.inventory.data.Event
 import com.example.inventory.data.Item
 import com.example.inventory.data.ItemsRepository
 import com.github.mikephil.charting.data.Entry
@@ -44,7 +45,7 @@ import kotlin.math.log
 /**
  * ViewModel to retrieve all items in the Room database.
  */
-class HomeViewModel(itemsRepository: ItemsRepository) : ViewModel() {
+class HomeViewModel(private val itemsRepository: ItemsRepository) : ViewModel() {
 
     /**
      * Holds home ui state. The list of items are retrieved from [ItemsRepository] and mapped to
@@ -64,10 +65,12 @@ class HomeViewModel(itemsRepository: ItemsRepository) : ViewModel() {
     val homeUiState: StateFlow<HomeUiState> =
         combine(
             itemsRepository.getAllItemsStream(),
-            itemsRepository.getLastItemStream()
-        ) { allItems, lastItem ->
+            itemsRepository.getLastItemStream(),
+            itemsRepository.getAllEventsStream()
+        ) { allItems, lastItem, allEvents ->
             HomeUiState(
                 itemList = allItems,
+                eventList = allEvents,
                 lastItem = lastItem ?: Item(1, LocalDateTime.now().toString(), 0, 0, 0, 0.0, 0, 5, 0, 0),
                 calcs = performCalculations(allItems)
             )
@@ -76,6 +79,12 @@ class HomeViewModel(itemsRepository: ItemsRepository) : ViewModel() {
             started = SharingStarted.WhileSubscribed(TIMEOUT_MILLIS),
             initialValue = HomeUiState(lastItem = Item(1, LocalDateTime.now().toString(), 0, 0, 0, 0.0, 0, 5, 0, 0))
         )
+
+    fun addEvent(event: Event) {
+        viewModelScope.launch {
+            itemsRepository.insertEvent(event)
+        }
+    }
 
     fun timeTickFlow(): Flow<String> = flow {
         while (true) {
@@ -208,4 +217,9 @@ class HomeViewModel(itemsRepository: ItemsRepository) : ViewModel() {
 /**
  * Ui State for HomeScreen
  */
-data class HomeUiState(val itemList: List<Item> = listOf(),val lastItem: Item, val calcs: List<Float> = listOf())
+data class HomeUiState(
+    val itemList: List<Item> = listOf(),
+    val eventList: List<Event> = listOf(),
+    val lastItem: Item,
+    val calcs: List<Float> = listOf()
+)

@@ -56,6 +56,8 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
@@ -73,15 +75,18 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import com.example.inventory.InventoryTopAppBar
 import com.example.inventory.R
+import com.example.inventory.data.Event
 import com.example.inventory.data.Item
 import com.example.inventory.ui.AppViewModelProvider
 import com.example.inventory.ui.navigation.NavigationDestination
@@ -189,7 +194,9 @@ fun HomeScreen(
     ) { innerPadding ->
         HomeBody(
             itemList = homeUiState.itemList,
+            eventList = homeUiState.eventList,
             onItemClick = navigateToItemUpdate,
+            onEventSave = viewModel::addEvent,
             modifier = modifier
                 .padding(innerPadding)
                 .fillMaxSize()
@@ -201,7 +208,11 @@ fun HomeScreen(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun HomeBody(
-    itemList: List<Item>, onItemClick: (Int) -> Unit, modifier: Modifier = Modifier
+    itemList: List<Item>,
+    eventList: List<Event>,
+    onItemClick: (Int) -> Unit,
+    onEventSave: (Event) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     var plotByWeek by remember { mutableStateOf(false) }
     var moFilt by remember { mutableStateOf(0) }
@@ -224,7 +235,7 @@ private fun HomeBody(
     }
     val gradeProgressionData = gradeProgressionDataByFilter[locationFilter]
 
-    fun writeCsvRows(csvWriter: CSVWriter, items: List<Item>) {
+    fun writeCsvRows(csvWriter: CSVWriter, items: List<Item>, events: List<Event>) {
         val header = arrayOf("id", "time", "grade", "send/reps", "type", "weight", "outside", "effort", "pain", "fear")
         csvWriter.writeNext(header)
 
@@ -243,9 +254,24 @@ private fun HomeBody(
             )
             csvWriter.writeNext(row)
         }
+
+        csvWriter.writeNext(arrayOf(""))
+        csvWriter.writeNext(arrayOf("events"))
+        csvWriter.writeNext(arrayOf("id", "time", "event_type", "note", "value"))
+        events.forEach { event ->
+            csvWriter.writeNext(
+                arrayOf(
+                    event.id.toString(),
+                    event.time,
+                    eventTypeLabel(event.type),
+                    event.note,
+                    event.value.toString()
+                )
+            )
+        }
     }
 
-    fun writeItemsToCsv(context: Context, items: List<Item>) {
+    fun writeItemsToCsv(context: Context, items: List<Item>, events: List<Event>) {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val resolver = context.contentResolver
@@ -262,7 +288,7 @@ private fun HomeBody(
                     outputStream.use {
                         OutputStreamWriter(outputStream).use { writer ->
                             CSVWriter(writer).use { csvWriter ->
-                                writeCsvRows(csvWriter, items)
+                                writeCsvRows(csvWriter, items, events)
                             }
                         }
                     }
@@ -274,7 +300,7 @@ private fun HomeBody(
                 val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
                 val csvFile = File(downloadsDir, "climb_data.csv")
                 CSVWriter(FileWriter(csvFile)).use { csvWriter ->
-                    writeCsvRows(csvWriter, items)
+                    writeCsvRows(csvWriter, items, events)
                 }
                 Toast.makeText(context, "Exported climb_data.csv to Downloads", Toast.LENGTH_SHORT).show()
             }
@@ -343,7 +369,7 @@ private fun HomeBody(
 
             }
             HorizontalPager(
-                pageCount = 3,
+                pageCount = 4,
                 state = pagerState,
                 modifier = Modifier.weight(1f)
             ) { page ->
@@ -369,7 +395,15 @@ private fun HomeBody(
                             modifier = Modifier.padding(horizontal = dimensionResource(id = R.dimen.padding_small))
                         )
                     }
-                    1 -> Column(
+                    1 -> EventPage(
+                        eventList = eventList,
+                        onEventSave = onEventSave,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = dimensionResource(id = R.dimen.padding_small))
+                    )
+                    2 -> Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(dimensionResource(id = R.dimen.padding_medium)),
                         modifier = Modifier
@@ -452,7 +486,7 @@ private fun HomeBody(
                             }
                         }
                         Button(
-                            onClick = { writeItemsToCsv(context, itemList) },
+                            onClick = { writeItemsToCsv(context, itemList, eventList) },
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(text = "Export")
@@ -465,6 +499,166 @@ private fun HomeBody(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+private fun eventTypeLabel(type: Int): String {
+    return when (type) {
+        0 -> "Injury"
+        1 -> "Bodyweight"
+        2 -> "RPS"
+        else -> "Event"
+    }
+}
+
+@RequiresApi(Build.VERSION_CODES.O)
+@Composable
+private fun EventPage(
+    eventList: List<Event>,
+    onEventSave: (Event) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var eventType by remember { mutableStateOf(0) }
+    var injuryNote by remember { mutableStateOf("") }
+    var bodyweight by remember { mutableStateOf("") }
+    var rps by remember { mutableStateOf("0") }
+    val context = LocalContext.current
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(dimensionResource(id = R.dimen.padding_medium)),
+        modifier = modifier
+    ) {
+        Text(
+            text = "Events",
+            style = MaterialTheme.typography.titleLarge
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(dimensionResource(id = R.dimen.padding_small))) {
+            Button(onClick = { eventType = 0 }) {
+                Text(text = "Injury")
+            }
+            Button(onClick = { eventType = 1 }) {
+                Text(text = "Bodyweight")
+            }
+            Button(onClick = { eventType = 2 }) {
+                Text(text = "RPS")
+            }
+        }
+        Text(
+            text = eventTypeLabel(eventType),
+            style = MaterialTheme.typography.titleMedium
+        )
+
+        when (eventType) {
+            0 -> {
+                OutlinedTextField(
+                    value = injuryNote,
+                    onValueChange = { injuryNote = it },
+                    label = { Text(text = "Injury note") },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        disabledContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+            1 -> {
+                OutlinedTextField(
+                    value = bodyweight,
+                    onValueChange = { value ->
+                        bodyweight = value.filter { it.isDigit() || it == '.' }.take(6)
+                    },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    label = { Text(text = "Bodyweight") },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        disabledContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+            }
+            2 -> {
+                OutlinedTextField(
+                    value = rps,
+                    onValueChange = { value ->
+                        val digits = value.filter { it.isDigit() }.take(2)
+                        rps = digits.toIntOrNull()?.coerceIn(0, 10)?.toString() ?: ""
+                    },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    label = { Text(text = "RPS (0-10)") },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        disabledContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+            }
+        }
+
+        Button(
+            onClick = {
+                val now = LocalDateTime.now().toString()
+                val event = when (eventType) {
+                    0 -> Event(time = now, type = 0, note = injuryNote.trim())
+                    1 -> Event(time = now, type = 1, value = bodyweight.toDoubleOrNull() ?: 0.0)
+                    else -> Event(time = now, type = 2, value = rps.toDoubleOrNull()?.coerceIn(0.0, 10.0) ?: 0.0)
+                }
+                onEventSave(event)
+                if (eventType == 0) injuryNote = ""
+                Toast.makeText(context, "Saved ${eventTypeLabel(eventType)}", Toast.LENGTH_SHORT).show()
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(text = "Save ${eventTypeLabel(eventType)}")
+        }
+
+        eventList.take(20).forEach { event ->
+            EventListItem(event = event)
+        }
+    }
+}
+
+@RequiresApi(Build.VERSION_CODES.O)
+@Composable
+private fun EventListItem(event: Event, modifier: Modifier = Modifier) {
+    val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(dimensionResource(id = R.dimen.padding_large)),
+            verticalArrangement = Arrangement.spacedBy(dimensionResource(id = R.dimen.padding_small))
+        ) {
+            Row(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = LocalDateTime.parse(event.time, formatter).format(DateTimeFormatter.ofPattern("MM-dd HH:mm")),
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Spacer(Modifier.weight(1f))
+                Text(
+                    text = eventTypeLabel(event.type),
+                    style = MaterialTheme.typography.titleMedium
+                )
+            }
+            val detail = when (event.type) {
+                0 -> event.note
+                1 -> event.value.toString()
+                2 -> event.value.toInt().toString()
+                else -> ""
+            }
+            if (detail.isNotBlank()) {
+                Text(
+                    text = detail,
+                    style = MaterialTheme.typography.bodyLarge
+                )
             }
         }
     }
@@ -2088,9 +2282,14 @@ fun ItemBarChartHP(itemList: List<Item>, modifier: Modifier = Modifier, plotByWe
 @Composable
 fun HomeBodyPreview() {
     InventoryTheme {
-        HomeBody(listOf(
-            //Item(1, "Game", 10, 20), Item(2, "Pen", 200.0, 30), Item(3, "TV", 300.0, 50)
-        ), onItemClick = {})
+        HomeBody(
+            itemList = listOf(
+                //Item(1, "Game", 10, 20), Item(2, "Pen", 200.0, 30), Item(3, "TV", 300.0, 50)
+            ),
+            eventList = listOf(),
+            onItemClick = {},
+            onEventSave = {}
+        )
     }
 }
 
@@ -2098,7 +2297,12 @@ fun HomeBodyPreview() {
 @Composable
 fun HomeBodyEmptyListPreview() {
     InventoryTheme {
-        HomeBody(listOf(), onItemClick = {})
+        HomeBody(
+            itemList = listOf(),
+            eventList = listOf(),
+            onItemClick = {},
+            onEventSave = {}
+        )
     }
 }
 

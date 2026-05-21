@@ -27,6 +27,8 @@ interface ItemsRepository {
      */
     fun getAllItemsStream(): Flow<List<Item>>
 
+    fun getAllEventsStream(): Flow<List<Event>>
+
     fun getLastItemStream(): Flow<Item>
 
     /**
@@ -38,6 +40,8 @@ interface ItemsRepository {
      * Insert item in the data source
      */
     suspend fun insertItem(item: Item)
+
+    suspend fun insertEvent(event: Event)
 
     /**
      * Delete item from the data source

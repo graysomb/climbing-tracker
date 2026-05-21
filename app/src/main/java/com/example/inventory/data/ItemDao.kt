@@ -36,6 +36,9 @@ interface ItemDao {
     @Query("SELECT * from items ORDER BY id DESC")
     fun getAllItems(): Flow<List<Item>>
 
+    @Query("SELECT * from events ORDER BY id DESC")
+    fun getAllEvents(): Flow<List<Event>>
+
     @Query("SELECT * from items WHERE id = :id")
     fun getItem(id: Int): Flow<Item>
 
@@ -43,6 +46,9 @@ interface ItemDao {
     // existing Item into the database Room ignores the conflict.
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(item: Item)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insert(event: Event)
 
     @Update
     suspend fun update(item: Item)

@@ -22,10 +22,13 @@ class OfflineItemsRepository(private val itemDao: ItemDao) : ItemsRepository {
 
     override fun getLastItemStream(): Flow<Item> = itemDao.getLastItem()
     override fun getAllItemsStream(): Flow<List<Item>> = itemDao.getAllItems()
+    override fun getAllEventsStream(): Flow<List<Event>> = itemDao.getAllEvents()
 
     override fun getItemStream(id: Int): Flow<Item?> = itemDao.getItem(id)
 
     override suspend fun insertItem(item: Item) = itemDao.insert(item)
+
+    override suspend fun insertEvent(event: Event) = itemDao.insert(event)
 
     override suspend fun deleteItem(item: Item) = itemDao.delete(item)
 
