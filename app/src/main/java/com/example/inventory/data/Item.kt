@@ -38,4 +38,5 @@ data class Item @RequiresApi(Build.VERSION_CODES.O) constructor(
     val outside: Int,
     val effort: Int = 5,
     val pain: Int = 0,
+    val fear: Int = 0,
 )

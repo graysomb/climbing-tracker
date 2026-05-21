@@ -63,7 +63,8 @@ class ItemEntryViewModel(private val itemsRepository: ItemsRepository) : ViewMod
                         weight = lastItemDetails.weight,
                         outside = lastItemDetails.outside,
                         effort = lastItemDetails.effort,
-                        pain = lastItemDetails.pain
+                        pain = lastItemDetails.pain,
+                        fear = lastItemDetails.fear
                     )
                     itemUiState = ItemUiState(comboItemDetails, isEntryValid = true, isEdit = false)
                 } else {
@@ -125,7 +126,8 @@ data class ItemDetails(
     val weight: String = "",
     val outside: String = "",
     val effort: String = "5",
-    val pain: String = "0"
+    val pain: String = "0",
+    val fear: String = "0"
 )
 
 /**
@@ -144,6 +146,7 @@ fun ItemDetails.toItem(): Item = Item(
     outside = outside.toIntOrNull() ?: 0,
     effort = effort.toIntOrNull()?.coerceIn(1, 10) ?: 5,
     pain = pain.toIntOrNull()?.coerceIn(0, 10) ?: 0,
+    fear = fear.toIntOrNull()?.coerceIn(0, 10) ?: 0,
 )
 
 fun Item.formatedPrice(): String {
@@ -172,5 +175,6 @@ fun Item.toItemDetails(): ItemDetails = ItemDetails(
     weight = weight.toString(),
     outside = outside.toString(),
     effort = effort.toString(),
-    pain = pain.toString()
+    pain = pain.toString(),
+    fear = fear.toString()
 )

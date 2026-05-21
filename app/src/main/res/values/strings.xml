@@ -46,4 +46,5 @@
     <string name="outside">outside</string>
     <string name="perceived_effort">Perceived effort (1-10)</string>
     <string name="pain">Pain (0-10)</string>
+    <string name="fear">Fear (0-10)</string>
 </resources>

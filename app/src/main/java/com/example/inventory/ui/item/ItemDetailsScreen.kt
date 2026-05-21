@@ -260,6 +260,16 @@ fun ItemDetails(
                     )
                 )
             )
+            ItemDetailsRow(
+                labelResID = R.string.fear,
+                itemDetail = item.fear.toString(),
+                modifier = Modifier.padding(
+                    horizontal = dimensionResource(
+                        id = R.dimen
+                            .padding_medium
+                    )
+                )
+            )
         }
 
     }
