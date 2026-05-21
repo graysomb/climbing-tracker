@@ -1171,28 +1171,35 @@ fun ItemBarChartProb(itemList: List<Item>, modifier: Modifier = Modifier, intege
     val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
     val currentDate = LocalDate.now()
     val threeMonthsAgo = currentDate.minusMonths(3)
+    val chartKey = "prob-${itemList.hashCode()}-$integerState-$moFilt"
 
-    val filteredItems = itemList.filter { item ->
-        val itemDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
-        !itemDate.isBefore(threeMonthsAgo) && !itemDate.isAfter(currentDate)
+    val filteredItems = remember(itemList, threeMonthsAgo, currentDate) {
+        itemList.filter { item ->
+            val itemDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
+            !itemDate.isBefore(threeMonthsAgo) && !itemDate.isAfter(currentDate)
+        }
     }
 
-    var groupedByPrice = filteredItems.groupBy { it.price }
-
-    if (moFilt == 0) {
-        groupedByPrice = itemList.groupBy { it.price }
+    val groupedByPrice = remember(itemList, filteredItems, moFilt) {
+        if (moFilt == 0) {
+            itemList.groupBy { it.price }
+        } else {
+            filteredItems.groupBy { it.price }
+        }
     }
 
 
-    val priceFractions = groupedByPrice.mapValues { (_, items) ->
-        val sends = items.count { it.quantity > 0 }
-        val sendsV = items.filter{ it.quantity > 0 }.sumOf{it.price.toInt()}
-        val attempts = items.count { it.quantity <= 0 }
-        when (integerState) {
-            0 -> if (sends + attempts > 0) sends.toFloat() / (sends + attempts) else 0f
-            1 -> sendsV.toFloat()
-            2 -> (sends + attempts).toFloat()
-            else -> 0f
+    val priceFractions = remember(groupedByPrice, integerState) {
+        groupedByPrice.mapValues { (_, items) ->
+            val sends = items.count { it.quantity > 0 }
+            val sendsV = items.filter { it.quantity > 0 }.sumOf { it.price.toInt() }
+            val attempts = items.count { it.quantity <= 0 }
+            when (integerState) {
+                0 -> if (sends + attempts > 0) sends.toFloat() / (sends + attempts) else 0f
+                1 -> sendsV.toFloat()
+                2 -> (sends + attempts).toFloat()
+                else -> 0f
+            }
         }
     }
 
@@ -1274,6 +1281,8 @@ fun ItemBarChartProb(itemList: List<Item>, modifier: Modifier = Modifier, intege
             }
         },
         update = { barChart ->
+            if (barChart.tag == chartKey) return@AndroidView
+            barChart.tag = chartKey
             barChart.data = CombinedData().apply {
                 setData(barData)
                 setData(lineData)
@@ -1289,16 +1298,21 @@ fun ItemBarChartProb(itemList: List<Item>, modifier: Modifier = Modifier, intege
 @Composable
 fun WeeklySentGradeChart(itemList: List<Item>, modifier: Modifier = Modifier) {
     val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
-    val sentClimbs = itemList
-        .filter { it.type == 0 && it.quantity > 0 }
-        .sortedBy { LocalDateTime.parse(it.name, formatter).toLocalDate() }
+    val chartKey = "weekly-sent-${itemList.hashCode()}"
+    val sentClimbs = remember(itemList) {
+        itemList
+            .filter { it.type == 0 && it.quantity > 0 }
+            .sortedBy { LocalDateTime.parse(it.name, formatter).toLocalDate() }
+    }
     val earliestDate = sentClimbs.minOfOrNull { item ->
         LocalDateTime.parse(item.name, formatter).toLocalDate()
     } ?: LocalDate.now()
 
-    val groupedByWeek = sentClimbs.groupBy { item ->
-        val itemDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
-        (ChronoUnit.DAYS.between(earliestDate, itemDate) / 7L).toFloat()
+    val groupedByWeek = remember(sentClimbs, earliestDate) {
+        sentClimbs.groupBy { item ->
+            val itemDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
+            (ChronoUnit.DAYS.between(earliestDate, itemDate) / 7L).toFloat()
+        }
     }
 
     val maxEntries = groupedByWeek.map { (week, items) ->
@@ -1323,8 +1337,11 @@ fun WeeklySentGradeChart(itemList: List<Item>, modifier: Modifier = Modifier) {
         valueTextColor = Color.MAGENTA
         valueTextSize = 10f
     }
-    val lineData = LineData(maxDataSet, averageDataSet)
-    lineData.setDrawValues(false)
+    val lineData = remember(maxEntries, averageEntries) {
+        LineData(maxDataSet, averageDataSet).apply {
+            setDrawValues(false)
+        }
+    }
 
     AndroidView(
         modifier = modifier.fillMaxWidth(),
@@ -1350,6 +1367,8 @@ fun WeeklySentGradeChart(itemList: List<Item>, modifier: Modifier = Modifier) {
             }
         },
         update = { chart ->
+            if (chart.tag == chartKey) return@AndroidView
+            chart.tag = chartKey
             chart.data = CombinedData().apply {
                 setData(lineData)
             }
@@ -1371,20 +1390,25 @@ fun WeeklySentGradeChart(itemList: List<Item>, modifier: Modifier = Modifier) {
 fun VPointsMovingAverageChart(itemList: List<Item>, modifier: Modifier = Modifier) {
     val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
     var defaultViewportKey by remember { mutableStateOf<String?>(null) }
-    val climbItems = itemList
-        .filter { it.type == 0 }
-        .sortedBy { LocalDateTime.parse(it.name, formatter).toLocalDate() }
+    val chartKey = "vpoints-ma-${itemList.hashCode()}"
+    val climbItems = remember(itemList) {
+        itemList
+            .filter { it.type == 0 }
+            .sortedBy { LocalDateTime.parse(it.name, formatter).toLocalDate() }
+    }
     val earliestDate = climbItems.minOfOrNull { item ->
         LocalDateTime.parse(item.name, formatter).toLocalDate()
     } ?: LocalDate.now()
     val latestDate = climbItems.maxOfOrNull { item ->
         LocalDateTime.parse(item.name, formatter).toLocalDate()
     } ?: earliestDate
-    val dailyVPoints = climbItems
-        .groupBy { LocalDateTime.parse(it.name, formatter).toLocalDate() }
-        .mapValues { (_, itemsForDay) ->
-            itemsForDay.sumOf { it.price.toInt() }.toFloat()
-        }
+    val dailyVPoints = remember(climbItems) {
+        climbItems
+            .groupBy { LocalDateTime.parse(it.name, formatter).toLocalDate() }
+            .mapValues { (_, itemsForDay) ->
+                itemsForDay.sumOf { it.price.toInt() }.toFloat()
+            }
+    }
 
     fun movingAverageEntries(windowDays: Long): List<Entry> {
         return generateSequence(earliestDate) { date ->
@@ -1406,29 +1430,36 @@ fun VPointsMovingAverageChart(itemList: List<Item>, modifier: Modifier = Modifie
         }.toList()
     }
 
-    val sevenDayDataSet = LineDataSet(movingAverageEntries(7), "7d avg").apply {
+    val sevenDayEntries = remember(dailyVPoints, earliestDate, latestDate) { movingAverageEntries(7) }
+    val thirtyDayEntries = remember(dailyVPoints, earliestDate, latestDate) { movingAverageEntries(30) }
+    val ninetyDayEntries = remember(dailyVPoints, earliestDate, latestDate) { movingAverageEntries(90) }
+
+    val sevenDayDataSet = LineDataSet(sevenDayEntries, "7d avg").apply {
         color = android.graphics.Color.MAGENTA
         setDrawCircles(false)
         lineWidth = 2f
         valueTextColor = android.graphics.Color.MAGENTA
         valueTextSize = 10f
     }
-    val thirtyDayDataSet = LineDataSet(movingAverageEntries(30), "30d avg").apply {
+    val thirtyDayDataSet = LineDataSet(thirtyDayEntries, "30d avg").apply {
         color = android.graphics.Color.YELLOW
         setDrawCircles(false)
         lineWidth = 2f
         valueTextColor = android.graphics.Color.YELLOW
         valueTextSize = 10f
     }
-    val ninetyDayDataSet = LineDataSet(movingAverageEntries(90), "90d avg").apply {
+    val ninetyDayDataSet = LineDataSet(ninetyDayEntries, "90d avg").apply {
         color = android.graphics.Color.CYAN
         setDrawCircles(false)
         lineWidth = 2f
         valueTextColor = android.graphics.Color.CYAN
         valueTextSize = 10f
     }
-    val lineData = LineData(sevenDayDataSet, thirtyDayDataSet, ninetyDayDataSet)
-    lineData.setDrawValues(false)
+    val lineData = remember(sevenDayEntries, thirtyDayEntries, ninetyDayEntries) {
+        LineData(sevenDayDataSet, thirtyDayDataSet, ninetyDayDataSet).apply {
+            setDrawValues(false)
+        }
+    }
     val viewportKey = "${lineData.xMin}-${lineData.xMax}"
     val defaultVisibleDays = 90f
 
@@ -1457,6 +1488,8 @@ fun VPointsMovingAverageChart(itemList: List<Item>, modifier: Modifier = Modifie
             }
         },
         update = { chart ->
+            if (chart.tag == chartKey) return@AndroidView
+            chart.tag = chartKey
             chart.data = CombinedData().apply {
                 setData(lineData)
             }
@@ -2035,6 +2068,7 @@ fun ItemBarChart(
     val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
     val currentDate = LocalDate.now()
     var defaultViewportKey by remember { mutableStateOf<String?>(null) }
+    val chartKey = "vpoints-${itemList.hashCode()}-$plotByWeek-$showLoadOverlay-$baselineMonths"
 
     // Filter items based on the desired time range
     /*val filteredItems = if (plotByWeek) {
@@ -2052,36 +2086,42 @@ fun ItemBarChart(
     }*/
     val filteredItems = itemList
 
-    val sortedItems = filteredItems.sortedBy {
-        LocalDateTime.parse(it.name, formatter).toLocalDate()
+    val sortedItems = remember(filteredItems) {
+        filteredItems.sortedBy {
+            LocalDateTime.parse(it.name, formatter).toLocalDate()
+        }
     }
     // Group items by week or day
     val earliestDate = sortedItems.minOfOrNull { item ->
         LocalDateTime.parse(item.name, formatter).toLocalDate()
     } ?: LocalDate.MIN
 
-    val groupedQuantities = if (plotByWeek) {
-        sortedItems.groupBy { item ->
-            val localDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
-            val daysSinceEarliest = ChronoUnit.DAYS.between(earliestDate, localDate)
-            val week = (daysSinceEarliest / 7.0f).toInt()
-            week.toFloat()
+    val groupedQuantities = remember(sortedItems, earliestDate, plotByWeek) {
+        if (plotByWeek) {
+            sortedItems.groupBy { item ->
+                val localDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
+                val daysSinceEarliest = ChronoUnit.DAYS.between(earliestDate, localDate)
+                val week = (daysSinceEarliest / 7.0f).toInt()
+                week.toFloat()
 
-        }
-    } else {
-        sortedItems.groupBy { item ->
-            val localDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
-            val daysSinceEarliest = ChronoUnit.DAYS.between(earliestDate, localDate)
-            daysSinceEarliest.toFloat()
+            }
+        } else {
+            sortedItems.groupBy { item ->
+                val localDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
+                val daysSinceEarliest = ChronoUnit.DAYS.between(earliestDate, localDate)
+                daysSinceEarliest.toFloat()
+            }
         }
     }
 
 
 
-    val dailyQuantities = groupedQuantities.mapValues { (_, itemsForPeriod) ->
-        val zeroQuantitySum = itemsForPeriod.filter { it.quantity > 0 }.sumOf { it.price.toInt() }
-        val positiveQuantitySum = itemsForPeriod.filter { it.quantity == 0 }.sumOf { it.price.toInt() }
-        listOf(zeroQuantitySum.toFloat(),zeroQuantitySum.toFloat()+ positiveQuantitySum.toFloat()) // maybe add a multiplier for no sends
+    val dailyQuantities = remember(groupedQuantities) {
+        groupedQuantities.mapValues { (_, itemsForPeriod) ->
+            val zeroQuantitySum = itemsForPeriod.filter { it.quantity > 0 }.sumOf { it.price.toInt() }
+            val positiveQuantitySum = itemsForPeriod.filter { it.quantity == 0 }.sumOf { it.price.toInt() }
+            listOf(zeroQuantitySum.toFloat(), zeroQuantitySum.toFloat() + positiveQuantitySum.toFloat())
+        }
     }
 
     // Create BarEntry lists for each quantity category
@@ -2103,9 +2143,12 @@ fun ItemBarChart(
     val barData = BarData(positiveQuantityDataSet, zeroQuantityDataSet)
     barData.isHighlightEnabled = false // Optional: disable highlighting
     barData.setDrawValues(false)      // Optional: hide values on bars
+    val loadEntries = remember(itemList, earliestDate, plotByWeek, baselineMonths, showLoadOverlay) {
+        if (showLoadOverlay) rollingLoadEntries(itemList, earliestDate, plotByWeek, baselineMonths) else emptyList()
+    }
     val lineData = if (showLoadOverlay) {
         val loadPercentDataSet = LineDataSet(
-            rollingLoadEntries(itemList, earliestDate, plotByWeek, baselineMonths),
+            loadEntries,
             "7-day load %"
         ).apply {
             color = android.graphics.Color.YELLOW
@@ -2166,6 +2209,8 @@ fun ItemBarChart(
             }
         },
         update = { barChart ->
+            if (barChart.tag == chartKey) return@AndroidView
+            barChart.tag = chartKey
             barChart.data = combinedData
             barChart.axisRight.textSize = 16f
             barChart.axisRight.textColor = android.graphics.Color.YELLOW
@@ -2212,31 +2257,38 @@ fun variance(data: List<Float>): Float {
 @Composable
 fun ItemBarChartHP(itemList: List<Item>, modifier: Modifier = Modifier, plotByWeek: Boolean) {
     val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
-    val items = itemList.sortedBy {
-        LocalDateTime.parse(it.name, formatter).toLocalDate()
+    val chartKey = "hp-${itemList.hashCode()}-$plotByWeek"
+    val items = remember(itemList) {
+        itemList.sortedBy {
+            LocalDateTime.parse(it.name, formatter).toLocalDate()
+        }
     }
     val earliestDate = items.minOfOrNull { item ->
         LocalDateTime.parse(item.name, formatter).toLocalDate()
     } ?: LocalDate.now()
 
     // Group items by day and calculate maximum values for each quantity category
-    val groupedQuantities = if (plotByWeek) {
-        items.groupBy { item ->
-            val localDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
-            val daysSinceEarliest = ChronoUnit.DAYS.between(earliestDate, localDate)
-            (daysSinceEarliest / 7.0f).toInt().toFloat()
-        }
-    } else {
-        items.groupBy { item ->
-            val localDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
-            ChronoUnit.DAYS.between(earliestDate, localDate).toFloat()
+    val groupedQuantities = remember(items, earliestDate, plotByWeek) {
+        if (plotByWeek) {
+            items.groupBy { item ->
+                val localDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
+                val daysSinceEarliest = ChronoUnit.DAYS.between(earliestDate, localDate)
+                (daysSinceEarliest / 7.0f).toInt().toFloat()
+            }
+        } else {
+            items.groupBy { item ->
+                val localDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
+                ChronoUnit.DAYS.between(earliestDate, localDate).toFloat()
+            }
         }
     }
 
-    val dailyQuantities = groupedQuantities.mapValues { (_, itemsForPeriod) ->
-        val zeroQuantityMax = itemsForPeriod.filter { it.type == 0 }.maxOfOrNull { it.weight.toInt() * it.quantity }?.toFloat() ?: 0f
-        val positiveQuantityMax = itemsForPeriod.filter { it.type == 1 }.maxOfOrNull { it.weight.toInt() * it.quantity }?.toFloat() ?: 0f
-        listOf(zeroQuantityMax, positiveQuantityMax)
+    val dailyQuantities = remember(groupedQuantities) {
+        groupedQuantities.mapValues { (_, itemsForPeriod) ->
+            val zeroQuantityMax = itemsForPeriod.filter { it.type == 0 }.maxOfOrNull { it.weight.toInt() * it.quantity }?.toFloat() ?: 0f
+            val positiveQuantityMax = itemsForPeriod.filter { it.type == 1 }.maxOfOrNull { it.weight.toInt() * it.quantity }?.toFloat() ?: 0f
+            listOf(zeroQuantityMax, positiveQuantityMax)
+        }
     }
 
     // Create BarEntry lists for each quantity category
@@ -2291,6 +2343,8 @@ fun ItemBarChartHP(itemList: List<Item>, modifier: Modifier = Modifier, plotByWe
             }
         },
         update = { barChart ->
+            if (barChart.tag == chartKey) return@AndroidView
+            barChart.tag = chartKey
             barChart.data = barData
             barChart.xAxis.valueFormatter = object : ValueFormatter() {
                 override fun getFormattedValue(value: Float): String {
