@@ -1,12 +1,19 @@
 import numpy as np
 import pandas as pd
+import matplotlib
+
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from pathlib import Path
 from scipy.optimize import curve_fit, minimize
 from scipy.stats import chi2, mannwhitneyu
 
 # ---- settings ----
 csv_path = "climb_data (4).csv"
 group_by_outside = True   # set False to fit all climbs together
+plot_output_dir = Path("model3_plot_outputs")
+
+plt.rcParams["figure.max_open_warning"] = 0
 
 injury_dates = pd.to_datetime([
     "2025-09-02",
@@ -27,6 +34,55 @@ injury_dates = pd.to_datetime([
     "2023-05-16",
     "2023-04-06",
 ])
+
+
+def slugify_title(title):
+    title = title.lower().strip()
+    chars = []
+
+    for char in title:
+        if char.isalnum():
+            chars.append(char)
+        elif chars and chars[-1] != "_":
+            chars.append("_")
+
+    slug = "".join(chars).strip("_")
+    return slug[:80] or "plot"
+
+
+def figure_title(fig):
+    if fig._suptitle is not None:
+        title = fig._suptitle.get_text()
+        if title:
+            return title
+
+    for ax in fig.axes:
+        title = ax.get_title()
+        if title:
+            return title
+
+    return "plot"
+
+
+def save_all_figures(output_dir=plot_output_dir):
+    output_dir.mkdir(parents=True, exist_ok=True)
+    saved_paths = []
+
+    for index, fig_num in enumerate(plt.get_fignums(), start=1):
+        fig = plt.figure(fig_num)
+        title = figure_title(fig)
+        file_name = f"{index:02d}_{slugify_title(title)}.png"
+        output_path = output_dir / file_name
+
+        fig.savefig(output_path, dpi=200, bbox_inches="tight")
+        saved_paths.append(output_path)
+
+    plt.close("all")
+
+    print()
+    print(f"Saved {len(saved_paths)} plot PNG files to {output_dir}:")
+    for output_path in saved_paths:
+        print(f"  {output_path}")
 
 
 def add_injury_markers(data, x_col, y_cols, ax=None, label="injury", annotate=False):
@@ -1096,6 +1152,12 @@ plt.tight_layout()
 df_load_info = df_nll.copy()
 
 df_load_info["info_load"] = df_load_info["nll_send"] + df_load_info["nll_fail"]
+df_load_info["attempt_send_surprise"] = -log_fun(df_load_info["p_send_expected"])
+df_load_info["failure_as_send_surprise"] = np.where(
+    df_load_info["send"] == 0,
+    df_load_info["attempt_send_surprise"],
+    0.0
+)
 
 df_load_info["day"] = df_load_info["datetime"].dt.date
 df_load_info["week"] = df_load_info["datetime"].dt.to_period("W-MON").dt.start_time
@@ -1106,6 +1168,10 @@ daily_load_info = (
     .agg(
         mean_load=("info_load", "mean"),
         total_load=("info_load", "sum"),
+        mean_attempt_send_surprise=("attempt_send_surprise", "mean"),
+        total_attempt_send_surprise=("attempt_send_surprise", "sum"),
+        mean_failure_as_send_surprise=("failure_as_send_surprise", "mean"),
+        total_failure_as_send_surprise=("failure_as_send_surprise", "sum"),
         n_attempts=("info_load", "size"),
         n_sends=("send", "sum"),
         send_nll=("nll_send", "sum"),
@@ -1123,6 +1189,10 @@ weekly_load_info = (
     .agg(
         mean_load=("info_load", "mean"),
         total_load=("info_load", "sum"),
+        mean_attempt_send_surprise=("attempt_send_surprise", "mean"),
+        total_attempt_send_surprise=("attempt_send_surprise", "sum"),
+        mean_failure_as_send_surprise=("failure_as_send_surprise", "mean"),
+        total_failure_as_send_surprise=("failure_as_send_surprise", "sum"),
         n_attempts=("info_load", "size"),
         n_sends=("send", "sum"),
         send_nll=("nll_send", "sum"),
@@ -1285,6 +1355,12 @@ acwr_df = (
 
 # For total load, missing days are zero-load rest days
 acwr_df["total_load"] = acwr_df["total_load"].fillna(0)
+acwr_df["total_attempt_send_surprise"] = (
+    acwr_df["total_attempt_send_surprise"].fillna(0)
+)
+acwr_df["total_failure_as_send_surprise"] = (
+    acwr_df["total_failure_as_send_surprise"].fillna(0)
+)
 acwr_df["n_attempts"] = acwr_df["n_attempts"].fillna(0)
 acwr_df["n_sends"] = acwr_df["n_sends"].fillna(0)
 acwr_df["n_fails"] = acwr_df["n_fails"].fillna(0)
@@ -1297,6 +1373,12 @@ acwr_df["n_fails"] = acwr_df["n_fails"].fillna(0)
 # This uses option 1 by default.
 mean_load_rest_value = 0
 acwr_df["mean_load"] = acwr_df["mean_load"].fillna(mean_load_rest_value)
+acwr_df["mean_attempt_send_surprise"] = (
+    acwr_df["mean_attempt_send_surprise"].fillna(mean_load_rest_value)
+)
+acwr_df["mean_failure_as_send_surprise"] = (
+    acwr_df["mean_failure_as_send_surprise"].fillna(mean_load_rest_value)
+)
 
 # ----------------------------
 # ACWR for total load
@@ -1319,6 +1401,40 @@ acwr_df["acwr_total_load"] = (
     acwr_df["chronic_total_load"]
 )
 
+acwr_df["acute_total_attempt_send_surprise"] = (
+    acwr_df["total_attempt_send_surprise"]
+    .rolling(acute_days, min_periods=acute_days)
+    .sum()
+)
+
+acwr_df["chronic_total_attempt_send_surprise"] = (
+    acwr_df["total_attempt_send_surprise"]
+    .rolling(chronic_days, min_periods=chronic_days)
+    .sum()
+)
+
+acwr_df["acwr_total_attempt_send_surprise"] = (
+    acwr_df["acute_total_attempt_send_surprise"] /
+    acwr_df["chronic_total_attempt_send_surprise"]
+)
+
+acwr_df["acute_total_failure_as_send_surprise"] = (
+    acwr_df["total_failure_as_send_surprise"]
+    .rolling(acute_days, min_periods=acute_days)
+    .sum()
+)
+
+acwr_df["chronic_total_failure_as_send_surprise"] = (
+    acwr_df["total_failure_as_send_surprise"]
+    .rolling(chronic_days, min_periods=chronic_days)
+    .sum()
+)
+
+acwr_df["acwr_total_failure_as_send_surprise"] = (
+    acwr_df["acute_total_failure_as_send_surprise"] /
+    acwr_df["chronic_total_failure_as_send_surprise"]
+)
+
 # ----------------------------
 # ACWR for mean load
 # ----------------------------
@@ -1338,6 +1454,40 @@ acwr_df["chronic_mean_load"] = (
 acwr_df["acwr_mean_load"] = (
     acwr_df["acute_mean_load"] /
     acwr_df["chronic_mean_load"]
+)
+
+acwr_df["acute_mean_attempt_send_surprise"] = (
+    acwr_df["mean_attempt_send_surprise"]
+    .rolling(acute_days, min_periods=acute_days)
+    .mean()
+)
+
+acwr_df["chronic_mean_attempt_send_surprise"] = (
+    acwr_df["mean_attempt_send_surprise"]
+    .rolling(chronic_days, min_periods=chronic_days)
+    .mean()
+)
+
+acwr_df["acwr_mean_attempt_send_surprise"] = (
+    acwr_df["acute_mean_attempt_send_surprise"] /
+    acwr_df["chronic_mean_attempt_send_surprise"]
+)
+
+acwr_df["acute_mean_failure_as_send_surprise"] = (
+    acwr_df["mean_failure_as_send_surprise"]
+    .rolling(acute_days, min_periods=acute_days)
+    .mean()
+)
+
+acwr_df["chronic_mean_failure_as_send_surprise"] = (
+    acwr_df["mean_failure_as_send_surprise"]
+    .rolling(chronic_days, min_periods=chronic_days)
+    .mean()
+)
+
+acwr_df["acwr_mean_failure_as_send_surprise"] = (
+    acwr_df["acute_mean_failure_as_send_surprise"] /
+    acwr_df["chronic_mean_failure_as_send_surprise"]
 )
 
 # Avoid divide-by-zero values
@@ -1749,7 +1899,21 @@ fig.tight_layout()
 # ============================================================
 
 injury_test_df = acwr_df[
-    ["day", "acwr_mean_load", "acwr_total_load", "mean_load", "total_load"]
+    [
+        "day",
+        "acwr_mean_load",
+        "acwr_total_load",
+        "acwr_mean_attempt_send_surprise",
+        "acwr_total_attempt_send_surprise",
+        "acwr_mean_failure_as_send_surprise",
+        "acwr_total_failure_as_send_surprise",
+        "mean_load",
+        "total_load",
+        "mean_attempt_send_surprise",
+        "total_attempt_send_surprise",
+        "mean_failure_as_send_surprise",
+        "total_failure_as_send_surprise"
+    ]
 ].copy()
 injury_test_df["day"] = pd.to_datetime(injury_test_df["day"])
 injury_test_df = injury_test_df.sort_values("day")
@@ -1764,6 +1928,26 @@ injury_test_df["max_acwr_mean_7d"] = (
 )
 injury_test_df["max_acwr_total_7d"] = (
     injury_test_df["acwr_total_load"]
+    .rolling(acwr_injury_lookback_days, min_periods=1)
+    .max()
+)
+injury_test_df["max_acwr_mean_attempt_send_surprise_7d"] = (
+    injury_test_df["acwr_mean_attempt_send_surprise"]
+    .rolling(acwr_injury_lookback_days, min_periods=1)
+    .max()
+)
+injury_test_df["max_acwr_total_attempt_send_surprise_7d"] = (
+    injury_test_df["acwr_total_attempt_send_surprise"]
+    .rolling(acwr_injury_lookback_days, min_periods=1)
+    .max()
+)
+injury_test_df["max_acwr_mean_failure_as_send_surprise_7d"] = (
+    injury_test_df["acwr_mean_failure_as_send_surprise"]
+    .rolling(acwr_injury_lookback_days, min_periods=1)
+    .max()
+)
+injury_test_df["max_acwr_total_failure_as_send_surprise_7d"] = (
+    injury_test_df["acwr_total_failure_as_send_surprise"]
     .rolling(acwr_injury_lookback_days, min_periods=1)
     .max()
 )
@@ -1877,6 +2061,22 @@ def logistic_lrt_test(data, feature_col):
 injury_predictor_specs = [
     ("max_acwr_mean_7d", "Max ACWR mean load"),
     ("max_acwr_total_7d", "Max ACWR total load"),
+    (
+        "max_acwr_mean_attempt_send_surprise_7d",
+        "Max ACWR mean attempt send surprise"
+    ),
+    (
+        "max_acwr_total_attempt_send_surprise_7d",
+        "Max ACWR total attempt send surprise"
+    ),
+    (
+        "max_acwr_mean_failure_as_send_surprise_7d",
+        "Max ACWR mean failure-as-send surprise"
+    ),
+    (
+        "max_acwr_total_failure_as_send_surprise_7d",
+        "Max ACWR total failure-as-send surprise"
+    ),
     ("max_mean_load_7d", "Max mean load"),
     ("max_total_load_7d", "Max total load"),
     ("max_mean_performance_7d", "Max mean performance"),
@@ -1908,7 +2108,7 @@ print(
     ]
 )
 
-fig, axes = plt.subplots(2, 3, figsize=(15, 8))
+fig, axes = plt.subplots(4, 3, figsize=(15, 14))
 axes = axes.ravel()
 rng = np.random.default_rng(42)
 
@@ -1946,11 +2146,14 @@ for ax, (feature_col, label) in zip(axes, injury_predictor_specs):
     )
     ax.set_ylabel("7-day predictor value")
 
+for ax in axes[len(injury_predictor_specs):]:
+    ax.axis("off")
+
 fig.suptitle("Injury vs non-injury days: 7-day predictors")
 fig.tight_layout()
 
 
-fig, axes = plt.subplots(2, 3, figsize=(15, 8))
+fig, axes = plt.subplots(4, 3, figsize=(15, 14))
 axes = axes.ravel()
 
 for ax, (feature_col, label) in zip(axes, injury_predictor_specs):
@@ -1985,6 +2188,9 @@ for ax, (feature_col, label) in zip(axes, injury_predictor_specs):
         f"LRT p={result['logistic_lrt_p']:.3g}, "
         f"AUC={result['auc']:.2f}"
     )
+
+for ax in axes[len(injury_predictor_specs):]:
+    ax.axis("off")
 
 fig.suptitle("Univariate logistic injury tests")
 fig.tight_layout()
@@ -2299,4 +2505,4 @@ plt.title("Weekly total load distribution with injury weeks")
 plt.legend()
 
 plt.tight_layout()
-plt.show()
+save_all_figures()
