@@ -1358,7 +1358,7 @@ def max_value_before_injury(data, y_col):
     value_lookup = data[["day", y_col]].dropna().copy()
 
     for injury_date in injury_dates:
-        lookback_start = injury_date - pd.Timedelta(days=acwr_injury_lookback_days)
+        lookback_start = injury_date - pd.Timedelta(days=acwr_injury_lookback_days - 1)
         lookback_window = value_lookup[
             (value_lookup["day"] >= lookback_start) &
             (value_lookup["day"] <= injury_date)
@@ -1524,6 +1524,225 @@ plt.xlabel(f"Max daily total load in prior 7 days [{unit_label}]")
 plt.ylabel("Number of injuries")
 plt.title("Histogram of max daily total load before injury dates")
 plt.tight_layout()
+
+# ============================================================
+# Box plots of max ACWR in the prior week at injury dates
+# ============================================================
+
+daily_acwr_inputs = df_nll.copy()
+daily_acwr_inputs["day"] = daily_acwr_inputs["datetime"].dt.normalize()
+daily_acwr_inputs["performance"] = (
+    daily_acwr_inputs["nll_send"] - daily_acwr_inputs["nll_fail"]
+)
+
+daily_acwr_inputs = (
+    daily_acwr_inputs
+    .groupby("day")
+    .agg(
+        total_vpoints=("grade", "sum"),
+        avg_vpoints=("grade", "mean"),
+        performance=("performance", "mean"),
+        send_surprise=("nll_send", "mean"),
+        fail_surprise=("nll_fail", "mean")
+    )
+    .reset_index()
+)
+
+daily_session_duration = (
+    df_nll
+    .assign(day=df_nll["datetime"].dt.normalize())
+    .groupby("day")
+    .agg(
+        session_start=("datetime", "min"),
+        session_end=("datetime", "max")
+    )
+    .reset_index()
+)
+daily_session_duration["session_duration_min"] = (
+    daily_session_duration["session_end"] -
+    daily_session_duration["session_start"]
+).dt.total_seconds() / 60
+daily_session_duration = daily_session_duration[["day", "session_duration_min"]]
+
+additional_acwr_df = (
+    pd.DataFrame({"day": full_days})
+    .merge(daily_acwr_inputs, on="day", how="left")
+    .merge(daily_session_duration, on="day", how="left")
+)
+
+additional_acwr_specs = [
+    ("total_vpoints", "sum", "Total V-points"),
+    ("avg_vpoints", "mean", "Average V-points"),
+    ("session_duration_min", "mean", "Session duration"),
+    ("performance", "mean", "Performance"),
+    ("send_surprise", "mean", "Send surprise"),
+    ("fail_surprise", "mean", "Fail surprise")
+]
+
+for value_col, acwr_mode, _ in additional_acwr_specs:
+    additional_acwr_df[value_col] = additional_acwr_df[value_col].fillna(0)
+
+    if acwr_mode == "sum":
+        acute_values = (
+            additional_acwr_df[value_col]
+            .rolling(acute_days, min_periods=acute_days)
+            .sum()
+        )
+        chronic_values = (
+            additional_acwr_df[value_col]
+            .rolling(chronic_days, min_periods=chronic_days)
+            .sum()
+        )
+    else:
+        acute_values = (
+            additional_acwr_df[value_col]
+            .rolling(acute_days, min_periods=acute_days)
+            .mean()
+        )
+        chronic_values = (
+            additional_acwr_df[value_col]
+            .rolling(chronic_days, min_periods=chronic_days)
+            .mean()
+        )
+
+    additional_acwr_df[f"acwr_{value_col}"] = acute_values / chronic_values
+
+additional_acwr_df = additional_acwr_df.replace([np.inf, -np.inf], np.nan)
+
+box_acwr_specs = [
+    ("acwr_total_load", "Total info load", acwr_df),
+    ("acwr_mean_load", "Mean info load", acwr_df),
+]
+
+box_acwr_specs.extend(
+    (f"acwr_{value_col}", label, additional_acwr_df)
+    for value_col, _, label in additional_acwr_specs
+)
+
+box_rows = []
+
+for acwr_col, label, source_df in box_acwr_specs:
+    acwr_lookup = source_df[["day", acwr_col]].copy()
+    acwr_lookup["day"] = pd.to_datetime(acwr_lookup["day"])
+    acwr_lookup = acwr_lookup.sort_values("day")
+    acwr_lookup["injury"] = (
+        acwr_lookup["day"].dt.normalize().isin(injury_dates.normalize()).astype(int)
+    )
+    acwr_lookup["max_acwr_past_7_days"] = (
+        acwr_lookup[acwr_col]
+        .rolling(acwr_injury_lookback_days, min_periods=1)
+        .max()
+    )
+
+    for _, row in acwr_lookup.dropna(subset=["max_acwr_past_7_days"]).iterrows():
+        box_rows.append({
+            "metric": label,
+            "injury": row["injury"],
+            "max_acwr_past_7_days": row["max_acwr_past_7_days"]
+        })
+
+acwr_box_df = pd.DataFrame(box_rows)
+
+print("\nMax prior-week ACWR values for injury/non-injury box plots:")
+print(acwr_box_df.head())
+
+
+def binary_logistic_lrt_p(feature_values, injury_flags):
+    x = np.asarray(feature_values, dtype=float)
+    y = np.asarray(injury_flags, dtype=float)
+
+    valid = np.isfinite(x) & np.isfinite(y)
+    x = x[valid]
+    y = y[valid]
+
+    if len(np.unique(y)) < 2 or len(np.unique(x)) < 2:
+        return np.nan
+
+    x_mean = x.mean()
+    x_sd = x.std(ddof=0)
+    z = (x - x_mean) / x_sd
+
+    def neg_log_likelihood(beta):
+        logits = beta[0] + beta[1] * z
+        probs = 1 / (1 + np.exp(-logits))
+        probs = np.clip(probs, 1e-9, 1 - 1e-9)
+        return -np.sum(y * np.log(probs) + (1 - y) * np.log(1 - probs))
+
+    injury_rate = np.clip(y.mean(), 1e-9, 1 - 1e-9)
+    null_intercept = np.log(injury_rate / (1 - injury_rate))
+    null_log_likelihood = -neg_log_likelihood([null_intercept, 0])
+
+    result = minimize(
+        neg_log_likelihood,
+        x0=np.array([null_intercept, 0.0]),
+        method="BFGS"
+    )
+
+    full_log_likelihood = -result.fun
+    likelihood_ratio = max(0, 2 * (full_log_likelihood - null_log_likelihood))
+    return chi2.sf(likelihood_ratio, df=1)
+
+
+fig, axes = plt.subplots(2, 4, figsize=(17, 8))
+axes = axes.ravel()
+rng = np.random.default_rng(42)
+
+for ax, (metric, sub) in zip(axes, acwr_box_df.groupby("metric", sort=False)):
+    non_injury_values = sub.loc[
+        sub["injury"] == 0,
+        "max_acwr_past_7_days"
+    ]
+    injury_values = sub.loc[
+        sub["injury"] == 1,
+        "max_acwr_past_7_days"
+    ]
+
+    mann_result = mannwhitneyu(
+        injury_values,
+        non_injury_values,
+        alternative="two-sided"
+    )
+    auc = mann_result.statistic / (len(injury_values) * len(non_injury_values))
+    logistic_p = binary_logistic_lrt_p(
+        sub["max_acwr_past_7_days"],
+        sub["injury"]
+    )
+
+    ax.boxplot(
+        [non_injury_values, injury_values],
+        labels=["Non-injury days", "Injury dates"],
+        showfliers=False
+    )
+    ax.scatter(
+        rng.normal(1, 0.035, len(non_injury_values)),
+        non_injury_values,
+        alpha=0.18,
+        s=16,
+        zorder=2
+    )
+    ax.scatter(
+        rng.normal(2, 0.035, len(injury_values)),
+        injury_values,
+        marker="x",
+        s=70,
+        linewidths=2,
+        color="red",
+        zorder=3
+    )
+    ax.axhline(0.8, linestyle=":", linewidth=1)
+    ax.axhline(1.3, linestyle=":", linewidth=1)
+    ax.set_title(
+        f"{metric}\n"
+        f"MW p={mann_result.pvalue:.3g}, "
+        f"logit p={logistic_p:.3g}, AUC={auc:.2f}"
+    )
+    ax.set_ylabel("Max ACWR in prior 7 days")
+
+for ax in axes[acwr_box_df["metric"].nunique():]:
+    ax.axis("off")
+
+fig.suptitle("Max prior-week ACWR on injury dates vs non-injury days")
+fig.tight_layout()
 
 # ============================================================
 # Statistical tests: 7-day predictors of injury

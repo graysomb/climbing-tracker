@@ -419,7 +419,8 @@ daily_load = (
     .groupby("day")
     .agg(
         daily_total_info_load=("info_load", "sum"),
-        daily_mean_info_load=("info_load", "mean")
+        daily_mean_info_load=("info_load", "mean"),
+        daily_mean_send_surprise=("surprise_send", "mean")
     )
     .reset_index()
 )
@@ -496,6 +497,7 @@ vgrade_cols = [
 analysis_df[vgrade_cols] = analysis_df[vgrade_cols].fillna(0)
 analysis_df["daily_total_info_load"] = analysis_df["daily_total_info_load"].fillna(0)
 analysis_df["daily_mean_info_load"] = analysis_df["daily_mean_info_load"].fillna(0)
+analysis_df["daily_mean_send_surprise"] = analysis_df["daily_mean_send_surprise"].fillna(0)
 analysis_df["daily_outside_attempts"] = analysis_df["daily_outside_attempts"].fillna(0)
 analysis_df["daily_total_attempts"] = analysis_df["daily_total_attempts"].fillna(0)
 analysis_df["daily_avg_attempt_vgrade"] = (
@@ -564,6 +566,50 @@ analysis_df["acwr_mean_info_load"] = (
     analysis_df["acute_mean_info_load"] /
     analysis_df["chronic_mean_info_load"]
 )
+analysis_df["acute_mean_send_surprise"] = (
+    analysis_df["daily_mean_send_surprise"]
+    .rolling(next_week_days, min_periods=next_week_days)
+    .mean()
+)
+analysis_df["chronic_mean_send_surprise"] = (
+    analysis_df["daily_mean_send_surprise"]
+    .rolling(past_month_days, min_periods=past_month_days)
+    .mean()
+)
+analysis_df["acwr_mean_send_surprise"] = (
+    analysis_df["acute_mean_send_surprise"] /
+    analysis_df["chronic_mean_send_surprise"]
+)
+analysis_df["acute_total_vpoints"] = (
+    analysis_df["daily_attempt_vgrades"]
+    .rolling(next_week_days, min_periods=next_week_days)
+    .sum()
+)
+analysis_df["chronic_total_vpoints"] = (
+    analysis_df["daily_attempt_vgrades"]
+    .rolling(past_month_days, min_periods=past_month_days)
+    .sum()
+)
+analysis_df["acwr_total_vpoints"] = (
+    analysis_df["acute_total_vpoints"] /
+    analysis_df["chronic_total_vpoints"]
+)
+analysis_df["acute_avg_vpoints"] = (
+    analysis_df["daily_avg_attempt_vgrade"]
+    .fillna(0)
+    .rolling(next_week_days, min_periods=next_week_days)
+    .mean()
+)
+analysis_df["chronic_avg_vpoints"] = (
+    analysis_df["daily_avg_attempt_vgrade"]
+    .fillna(0)
+    .rolling(past_month_days, min_periods=past_month_days)
+    .mean()
+)
+analysis_df["acwr_avg_vpoints"] = (
+    analysis_df["acute_avg_vpoints"] /
+    analysis_df["chronic_avg_vpoints"]
+)
 analysis_df = analysis_df.replace([np.inf, -np.inf], np.nan)
 
 analysis_df["past_month_attempt_vgrades"] = (
@@ -620,6 +666,24 @@ analysis_df["past_week_mean_acwr"] = (
     analysis_df["acwr_mean_info_load"]
     .shift(1)
     .rolling(next_week_days, min_periods=1)
+    .mean()
+)
+analysis_df["past_month_send_surprise_acwr"] = (
+    analysis_df["acwr_mean_send_surprise"]
+    .shift(1)
+    .rolling(past_month_days, min_periods=1)
+    .mean()
+)
+analysis_df["past_month_total_vpoints_acwr"] = (
+    analysis_df["acwr_total_vpoints"]
+    .shift(1)
+    .rolling(past_month_days, min_periods=1)
+    .mean()
+)
+analysis_df["past_month_avg_vpoints_acwr"] = (
+    analysis_df["acwr_avg_vpoints"]
+    .shift(1)
+    .rolling(past_month_days, min_periods=1)
     .mean()
 )
 
@@ -870,7 +934,10 @@ x50_performance_results = pd.DataFrame([
 
 acwr_predictor_specs = [
     ("past_week_total_acwr", "Past-week mean total-load ACWR"),
-    ("past_week_mean_acwr", "Past-week mean mean-load ACWR")
+    ("past_week_mean_acwr", "Past-week mean mean-load ACWR"),
+    ("past_month_send_surprise_acwr", "Past-month mean send-surprise ACWR"),
+    ("past_month_total_vpoints_acwr", "Past-month mean total V-points ACWR"),
+    ("past_month_avg_vpoints_acwr", "Past-month mean average V-points ACWR")
 ]
 
 next_day_acwr_results = pd.DataFrame([
@@ -1551,7 +1618,13 @@ ax.set_title(
 fig.tight_layout()
 
 
-fig, axes = plt.subplots(2, 2, figsize=(12, 9))
+n_acwr_predictors = len(acwr_predictor_specs)
+fig, axes = plt.subplots(
+    2,
+    n_acwr_predictors,
+    figsize=(5 * n_acwr_predictors, 9),
+    squeeze=False
+)
 
 for ax, (predictor_col, label) in zip(axes[0], acwr_predictor_specs):
     plot_df = calendar_analysis_df[
