@@ -214,7 +214,7 @@ private fun HomeBody(
     var plotByWeek by remember { mutableStateOf(false) }
     var moFilt by remember { mutableStateOf(0) }
     var locationFilter by remember { mutableStateOf(0) }
-    var baselineMonths by remember { mutableStateOf(3) }
+    var baselineMonths by remember { mutableStateOf(1) }
     var gradeProgressionDataByFilter by remember { mutableStateOf<Map<Int, GradeProgressionData>>(emptyMap()) }
     var gradeProgressionIsCalculating by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
@@ -380,6 +380,7 @@ private fun HomeBody(
                         Row(){
                             Text(" Load Today: " + ((filteredCalcs[5]*10f).toInt().toFloat()/10f).toString() + "%")
                             Text(" Load Week: " + ((filteredCalcs[6]*10f).toInt().toFloat()/10f).toString() + "%")
+                            Text(" Load Month: " + ((filteredCalcs[7]*10f).toInt().toFloat()/10f).toString() + "%")
                         }
                         Row(){
                             Text(" Flash: " + ((filteredCalcs[2]*1000f).toInt().toFloat()/1000f).toString())
@@ -769,6 +770,17 @@ private fun calculateHomeCalcs(itemList: List<Item>, baselineMonths: Int): List<
 
     val loadingThisDay = loadPercentForWindow(currentDate, 1)
     val loadingThisWeek = loadPercentForWindow(currentDate, 7)
+    val currentMonthStart = currentDate.withDayOfMonth(1)
+    val previousMonthStart = currentMonthStart.minusMonths(1)
+    val currentMonthLoad = triesLoadForItems(climbItems.filter { item ->
+        val itemDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
+        !itemDate.isBefore(currentMonthStart) && !itemDate.isAfter(currentDate)
+    })
+    val previousMonthLoad = triesLoadForItems(climbItems.filter { item ->
+        val itemDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
+        !itemDate.isBefore(previousMonthStart) && itemDate.isBefore(currentMonthStart)
+    })
+    val loadingThisMonth = loadingComponent(currentMonthLoad, previousMonthLoad) * 100f
 
     val groupedByPrice = filteredItems.groupBy { it.price }
     val priceFractions = groupedByPrice.mapValues { (_, items) ->
@@ -814,7 +826,8 @@ private fun calculateHomeCalcs(itemList: List<Item>, baselineMonths: Int): List<
         send3try.toFloat(),
         send6try.toFloat(),
         loadingThisDay,
-        loadingThisWeek
+        loadingThisWeek,
+        loadingThisMonth
     )
 }
 
@@ -2063,7 +2076,7 @@ fun ItemBarChart(
     modifier: Modifier = Modifier,
     plotByWeek: Boolean,
     showLoadOverlay: Boolean = false,
-    baselineMonths: Int = 3
+    baselineMonths: Int = 1
 ) {
     val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
     val currentDate = LocalDate.now()

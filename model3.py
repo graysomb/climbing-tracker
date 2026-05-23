@@ -1361,6 +1361,11 @@ acwr_df["total_attempt_send_surprise"] = (
 acwr_df["total_failure_as_send_surprise"] = (
     acwr_df["total_failure_as_send_surprise"].fillna(0)
 )
+acwr_df["send_nll"] = acwr_df["send_nll"].fillna(0)
+acwr_df["total_send_plus_failure_as_send_surprise"] = (
+    acwr_df["send_nll"] +
+    acwr_df["total_failure_as_send_surprise"]
+)
 acwr_df["n_attempts"] = acwr_df["n_attempts"].fillna(0)
 acwr_df["n_sends"] = acwr_df["n_sends"].fillna(0)
 acwr_df["n_fails"] = acwr_df["n_fails"].fillna(0)
@@ -1433,6 +1438,23 @@ acwr_df["chronic_total_failure_as_send_surprise"] = (
 acwr_df["acwr_total_failure_as_send_surprise"] = (
     acwr_df["acute_total_failure_as_send_surprise"] /
     acwr_df["chronic_total_failure_as_send_surprise"]
+)
+
+acwr_df["acute_total_send_plus_failure_as_send_surprise"] = (
+    acwr_df["total_send_plus_failure_as_send_surprise"]
+    .rolling(acute_days, min_periods=acute_days)
+    .sum()
+)
+
+acwr_df["chronic_total_send_plus_failure_as_send_surprise"] = (
+    acwr_df["total_send_plus_failure_as_send_surprise"]
+    .rolling(chronic_days, min_periods=chronic_days)
+    .sum()
+)
+
+acwr_df["acwr_total_send_plus_failure_as_send_surprise"] = (
+    acwr_df["acute_total_send_plus_failure_as_send_surprise"] /
+    acwr_df["chronic_total_send_plus_failure_as_send_surprise"]
 )
 
 # ----------------------------
@@ -1762,6 +1784,11 @@ additional_acwr_df = additional_acwr_df.replace([np.inf, -np.inf], np.nan)
 box_acwr_specs = [
     ("acwr_total_load", "Total info load", acwr_df),
     ("acwr_mean_load", "Mean info load", acwr_df),
+    (
+        "acwr_total_send_plus_failure_as_send_surprise",
+        "Total send + failure-as-send surprise",
+        acwr_df
+    ),
 ]
 
 box_acwr_specs.extend(
@@ -1833,7 +1860,15 @@ def binary_logistic_lrt_p(feature_values, injury_flags):
     return chi2.sf(likelihood_ratio, df=1)
 
 
-fig, axes = plt.subplots(2, 4, figsize=(17, 8))
+n_acwr_box_metrics = acwr_box_df["metric"].nunique()
+n_acwr_box_cols = 3
+n_acwr_box_rows = int(np.ceil(n_acwr_box_metrics / n_acwr_box_cols))
+fig, axes = plt.subplots(
+    n_acwr_box_rows,
+    n_acwr_box_cols,
+    figsize=(5 * n_acwr_box_cols, 4 * n_acwr_box_rows),
+    squeeze=False
+)
 axes = axes.ravel()
 rng = np.random.default_rng(42)
 
@@ -1907,12 +1942,14 @@ injury_test_df = acwr_df[
         "acwr_total_attempt_send_surprise",
         "acwr_mean_failure_as_send_surprise",
         "acwr_total_failure_as_send_surprise",
+        "acwr_total_send_plus_failure_as_send_surprise",
         "mean_load",
         "total_load",
         "mean_attempt_send_surprise",
         "total_attempt_send_surprise",
         "mean_failure_as_send_surprise",
-        "total_failure_as_send_surprise"
+        "total_failure_as_send_surprise",
+        "total_send_plus_failure_as_send_surprise"
     ]
 ].copy()
 injury_test_df["day"] = pd.to_datetime(injury_test_df["day"])
@@ -1948,6 +1985,11 @@ injury_test_df["max_acwr_mean_failure_as_send_surprise_7d"] = (
 )
 injury_test_df["max_acwr_total_failure_as_send_surprise_7d"] = (
     injury_test_df["acwr_total_failure_as_send_surprise"]
+    .rolling(acwr_injury_lookback_days, min_periods=1)
+    .max()
+)
+injury_test_df["max_acwr_total_send_plus_failure_as_send_surprise_7d"] = (
+    injury_test_df["acwr_total_send_plus_failure_as_send_surprise"]
     .rolling(acwr_injury_lookback_days, min_periods=1)
     .max()
 )
@@ -2076,6 +2118,10 @@ injury_predictor_specs = [
     (
         "max_acwr_total_failure_as_send_surprise_7d",
         "Max ACWR total failure-as-send surprise"
+    ),
+    (
+        "max_acwr_total_send_plus_failure_as_send_surprise_7d",
+        "Max ACWR total send + failure-as-send surprise"
     ),
     ("max_mean_load_7d", "Max mean load"),
     ("max_total_load_7d", "Max total load"),
