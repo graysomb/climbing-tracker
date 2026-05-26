@@ -337,12 +337,21 @@ def forward_rolling_sum_including_current(series, window):
 # ---- load / clean ----
 df = pd.read_csv(csv_path)
 
+df["send/reps"] = pd.to_numeric(df["send/reps"], errors="coerce")
+df["grade"] = pd.to_numeric(df["grade"], errors="coerce")
+df["outside"] = pd.to_numeric(df["outside"], errors="coerce").fillna(0)
+
 df = df[df["send/reps"].isin([0, 1])].copy()
 df["datetime"] = pd.to_datetime(df[date_col])
 df["day"] = df["datetime"].dt.normalize()
-df["grade"] = pd.to_numeric(df["grade"], errors="coerce")
 df["send"] = df["send/reps"].astype(float)
-df = df.dropna(subset=["datetime", "day", "grade", "send"])
+df = df.dropna(subset=["datetime", "day", "grade", "send"]).copy()
+
+if df.empty:
+    raise ValueError(
+        "No climb attempts found after cleaning the CSV. "
+        "Check that send/reps contains 0 for fails and 1 for sends."
+    )
 
 
 # ---- fit send-probability model ----

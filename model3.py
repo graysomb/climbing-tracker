@@ -138,12 +138,21 @@ def add_injury_markers(data, x_col, y_cols, ax=None, label="injury", annotate=Fa
 # ---- load / clean ----
 df = pd.read_csv(csv_path)
 
+df["send/reps"] = pd.to_numeric(df["send/reps"], errors="coerce")
+df["grade"] = pd.to_numeric(df["grade"], errors="coerce")
+df["outside"] = pd.to_numeric(df["outside"], errors="coerce").fillna(0)
+
 # Only keep actual climb attempts: send/reps should be 0 = fail, 1 = send
 df = df[df["send/reps"].isin([0, 1])].copy()
 
-df["grade"] = pd.to_numeric(df["grade"], errors="coerce")
 df["send"] = df["send/reps"].astype(float)
-df = df.dropna(subset=["grade", "send"])
+df = df.dropna(subset=["grade", "send"]).copy()
+
+if df.empty:
+    raise ValueError(
+        "No climb attempts found after cleaning the CSV. "
+        "Check that send/reps contains 0 for fails and 1 for sends."
+    )
 
 # ---- logistic model ----
 # x50 = grade where send probability is 50%
@@ -1860,6 +1869,156 @@ def binary_logistic_lrt_p(feature_values, injury_flags):
     return chi2.sf(likelihood_ratio, df=1)
 
 
+def fit_binary_logistic_probability(feature_values, injury_flags):
+    x = np.asarray(feature_values, dtype=float)
+    y = np.asarray(injury_flags, dtype=float)
+
+    valid = np.isfinite(x) & np.isfinite(y)
+    x = x[valid]
+    y = y[valid]
+
+    if len(np.unique(y)) < 2 or len(np.unique(x)) < 2:
+        return None
+
+    x_mean = x.mean()
+    x_sd = x.std(ddof=0)
+
+    if x_sd == 0:
+        return None
+
+    z = (x - x_mean) / x_sd
+
+    def neg_log_likelihood(beta):
+        logits = beta[0] + beta[1] * z
+        probs = 1 / (1 + np.exp(-logits))
+        probs = np.clip(probs, 1e-9, 1 - 1e-9)
+        return -np.sum(y * np.log(probs) + (1 - y) * np.log(1 - probs))
+
+    injury_rate = np.clip(y.mean(), 1e-9, 1 - 1e-9)
+    null_intercept = np.log(injury_rate / (1 - injury_rate))
+    null_log_likelihood = -neg_log_likelihood([null_intercept, 0])
+
+    result = minimize(
+        neg_log_likelihood,
+        x0=np.array([null_intercept, 0.0]),
+        method="BFGS"
+    )
+
+    full_log_likelihood = -result.fun
+    likelihood_ratio = max(0, 2 * (full_log_likelihood - null_log_likelihood))
+
+    def predict_probability(raw_x):
+        raw_x = np.asarray(raw_x, dtype=float)
+        raw_z = (raw_x - x_mean) / x_sd
+        logits = result.x[0] + result.x[1] * raw_z
+        return 1 / (1 + np.exp(-logits))
+
+    return {
+        "x": x,
+        "y": y,
+        "intercept": result.x[0],
+        "beta": result.x[1],
+        "x_mean": x_mean,
+        "x_sd": x_sd,
+        "n": len(y),
+        "n_injuries": int(y.sum()),
+        "observed_injury_rate": y.mean(),
+        "logistic_lrt_p": chi2.sf(likelihood_ratio, df=1),
+        "predict_probability": predict_probability
+    }
+
+
+vpoint_probability_specs = [
+    ("Total V-points", "Total V-points ACWR"),
+    ("Average V-points", "Average V-points ACWR")
+]
+vpoint_probability_rows = []
+vpoint_probability_fits = []
+
+for metric, label in vpoint_probability_specs:
+    sub = acwr_box_df[
+        acwr_box_df["metric"] == metric
+    ][["max_acwr_past_7_days", "injury"]].dropna().copy()
+    fit = fit_binary_logistic_probability(
+        sub["max_acwr_past_7_days"],
+        sub["injury"]
+    )
+
+    if fit is None:
+        continue
+
+    fit["metric"] = metric
+    fit["label"] = label
+    vpoint_probability_fits.append(fit)
+
+    x = fit["x"]
+    y = fit["y"]
+    predicted = fit["predict_probability"](x)
+    injury_mask = y == 1
+
+    summary_points = [
+        ("ACWR 0.8", 0.8),
+        ("ACWR 1.0", 1.0),
+        ("ACWR 1.3", 1.3),
+        ("injury-date mean ACWR", x[injury_mask].mean()),
+        ("non-injury mean ACWR", x[~injury_mask].mean())
+    ]
+
+    for point_label, raw_x in summary_points:
+        vpoint_probability_rows.append({
+            "metric": label,
+            "point": point_label,
+            "acwr_value": raw_x,
+            "predicted_injury_probability": fit["predict_probability"]([raw_x])[0],
+            "n": fit["n"],
+            "n_injuries": fit["n_injuries"],
+            "observed_injury_rate": fit["observed_injury_rate"],
+            "logistic_lrt_p": fit["logistic_lrt_p"]
+        })
+
+    vpoint_probability_rows.append({
+        "metric": label,
+        "point": "mean predicted probability on injury dates",
+        "acwr_value": np.nan,
+        "predicted_injury_probability": predicted[injury_mask].mean(),
+        "n": fit["n"],
+        "n_injuries": fit["n_injuries"],
+        "observed_injury_rate": fit["observed_injury_rate"],
+        "logistic_lrt_p": fit["logistic_lrt_p"]
+    })
+    vpoint_probability_rows.append({
+        "metric": label,
+        "point": "mean predicted probability on non-injury days",
+        "acwr_value": np.nan,
+        "predicted_injury_probability": predicted[~injury_mask].mean(),
+        "n": fit["n"],
+        "n_injuries": fit["n_injuries"],
+        "observed_injury_rate": fit["observed_injury_rate"],
+        "logistic_lrt_p": fit["logistic_lrt_p"]
+    })
+
+vpoint_probability_results = pd.DataFrame(vpoint_probability_rows)
+
+print("\nEstimated injury probability from V-point ACWR logistic models:")
+if len(vpoint_probability_results):
+    print(
+        vpoint_probability_results[
+            [
+                "metric",
+                "point",
+                "acwr_value",
+                "predicted_injury_probability",
+                "n",
+                "n_injuries",
+                "observed_injury_rate",
+                "logistic_lrt_p"
+            ]
+        ]
+    )
+else:
+    print("Not enough data to fit V-point ACWR injury probability models.")
+
+
 n_acwr_box_metrics = acwr_box_df["metric"].nunique()
 n_acwr_box_cols = 3
 n_acwr_box_rows = int(np.ceil(n_acwr_box_metrics / n_acwr_box_cols))
@@ -1927,6 +2086,48 @@ for ax in axes[acwr_box_df["metric"].nunique():]:
     ax.axis("off")
 
 fig.suptitle("Max prior-week ACWR on injury dates vs non-injury days")
+fig.tight_layout()
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 5), squeeze=False)
+axes = axes.ravel()
+rng = np.random.default_rng(42)
+
+for ax, fit in zip(axes, vpoint_probability_fits):
+    x = fit["x"]
+    y = fit["y"]
+    x_grid = np.linspace(x.min(), x.max(), 200)
+    probability_grid = fit["predict_probability"](x_grid)
+
+    ax.scatter(
+        x,
+        y + rng.normal(0, 0.025, len(y)),
+        alpha=0.25,
+        s=18,
+        label="days"
+    )
+    ax.plot(
+        x_grid,
+        probability_grid,
+        color="red",
+        linewidth=2,
+        label="logistic probability"
+    )
+    ax.axvline(0.8, linestyle=":", linewidth=1)
+    ax.axvline(1.3, linestyle=":", linewidth=1)
+    ax.set_ylim(-0.08, 1.08)
+    ax.set_xlabel(f"Max {fit['label']} in prior 7 days")
+    ax.set_ylabel("Estimated probability of injury")
+    ax.set_title(
+        f"{fit['label']}\n"
+        f"n={fit['n']}, injuries={fit['n_injuries']}, "
+        f"logit p={fit['logistic_lrt_p']:.3g}"
+    )
+    ax.legend()
+
+for ax in axes[len(vpoint_probability_fits):]:
+    ax.axis("off")
+
+fig.suptitle("Estimated injury probability from V-point ACWR")
 fig.tight_layout()
 
 # ============================================================

@@ -124,7 +124,9 @@ import kotlin.text.toDouble
 import com.example.inventory.ui.home.LogisticFitter
 import java.time.temporal.ChronoUnit
 import kotlin.math.log
+import kotlin.math.exp
 import kotlin.math.pow
+import kotlin.math.sqrt
 
 object HomeDestination : NavigationDestination {
     override val route = "home"
@@ -378,9 +380,14 @@ private fun HomeBody(
                             Text(" Trys/Day: "+((filteredCalcs[0]*10).toInt().toFloat()/10f).toString())
                         }
                         Row(){
-                            Text(" Load Today: " + ((filteredCalcs[5]*10f).toInt().toFloat()/10f).toString() + "%")
-                            Text(" Load Week: " + ((filteredCalcs[6]*10f).toInt().toFloat()/10f).toString() + "%")
-                            Text(" Load Month: " + ((filteredCalcs[7]*10f).toInt().toFloat()/10f).toString() + "%")
+                            Text(" Load: Today: " + ((filteredCalcs[5]*10f).toInt().toFloat()/10f).toString() + "%")
+                            Text(" Week: " + ((filteredCalcs[6]*10f).toInt().toFloat()/10f).toString() + "%")
+                            Text(" Month: " + ((filteredCalcs[7]*10f).toInt().toFloat()/10f).toString() + "%")
+                        }
+                        Row(){
+                            Text(" ACWR: MV: " + ((filteredCalcs[8]*10f).toInt().toFloat()/10f).toString() + "%")
+                            Text(" TV: " + ((filteredCalcs[9]*10f).toInt().toFloat()/10f).toString() + "%")
+                            Text(" Injury: " + ((filteredCalcs[10]*10f).toInt().toFloat()/10f).toString() + "%")
                         }
                         Row(){
                             Text(" Flash: " + ((filteredCalcs[2]*1000f).toInt().toFloat()/1000f).toString())
@@ -701,8 +708,13 @@ private fun EventListItem(event: Event, modifier: Modifier = Modifier) {
 private fun calculateHomeCalcs(itemList: List<Item>, baselineMonths: Int): List<Float> {
     val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
     val currentDate = LocalDate.now()
+    val injuryTotalVPointsAcwrMean = 0.5084f
+    val injuryTotalVPointsAcwrVariance = 0.0603f
+    val injuryAverageVPointsAcwrMean = 1.9742f
+    val injuryAverageVPointsAcwrVariance = 1.0113f
     val baselineMonthCount = baselineMonths.coerceAtLeast(1).toLong()
-    val threeMonthsAgo = currentDate.minusMonths(baselineMonthCount)
+    val baselineStartDate = currentDate.minusMonths(baselineMonthCount)
+    val gradeEstimateStartDate = currentDate.minusMonths(3)
     val climbItems = itemList.filter { it.type == 0 }
     val earliestClimbDate = climbItems.minOfOrNull { item ->
         LocalDateTime.parse(item.name, formatter).toLocalDate()
@@ -710,7 +722,12 @@ private fun calculateHomeCalcs(itemList: List<Item>, baselineMonths: Int): List<
 
     val filteredItems = climbItems.filter { item ->
         val itemDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
-        !itemDate.isBefore(threeMonthsAgo) && !itemDate.isAfter(currentDate)
+        !itemDate.isBefore(baselineStartDate) && !itemDate.isAfter(currentDate)
+    }
+
+    val gradeEstimateItems = climbItems.filter { item ->
+        val itemDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
+        !itemDate.isBefore(gradeEstimateStartDate) && !itemDate.isAfter(currentDate)
     }
 
     val groupedQuantities = filteredItems.groupBy { item ->
@@ -734,6 +751,16 @@ private fun calculateHomeCalcs(itemList: List<Item>, baselineMonths: Int): List<
 
     fun triesLoadForItems(items: List<Item>): Float {
         return items.sumOf { it.price.toInt() }.toFloat()
+    }
+
+    fun climbItemsForDay(date: LocalDate): List<Item> {
+        return climbItems.filter { item ->
+            LocalDateTime.parse(item.name, formatter).toLocalDate() == date
+        }
+    }
+
+    fun datesInTrailingWindow(endDate: LocalDate, windowDays: Long): List<LocalDate> {
+        return (windowDays - 1 downTo 0).map { daysAgo -> endDate.minusDays(daysAgo) }
     }
 
     fun loadPercentForWindow(endDate: LocalDate, windowDays: Long): Float {
@@ -768,6 +795,22 @@ private fun calculateHomeCalcs(itemList: List<Item>, baselineMonths: Int): List<
         return loadingComponent(windowLoad, baselineTriesPerDay * windowDays.toFloat()) * 100f
     }
 
+    fun totalVPointsForWindow(endDate: LocalDate, windowDays: Long): Float {
+        val windowStart = endDate.minusDays(windowDays - 1)
+        return triesLoadForItems(climbItems.filter { item ->
+            val itemDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
+            !itemDate.isBefore(windowStart) && !itemDate.isAfter(endDate)
+        })
+    }
+
+    fun meanDailyAverageVPointsForWindow(endDate: LocalDate, windowDays: Long): Float {
+        val dailyAverages = datesInTrailingWindow(endDate, windowDays).map { date ->
+            val itemsForDay = climbItemsForDay(date)
+            if (itemsForDay.isNotEmpty()) triesLoadForItems(itemsForDay) / itemsForDay.size else 0f
+        }
+        return if (dailyAverages.isNotEmpty()) dailyAverages.average().toFloat() else 0f
+    }
+
     val loadingThisDay = loadPercentForWindow(currentDate, 1)
     val loadingThisWeek = loadPercentForWindow(currentDate, 7)
     val currentMonthStart = currentDate.withDayOfMonth(1)
@@ -781,8 +824,36 @@ private fun calculateHomeCalcs(itemList: List<Item>, baselineMonths: Int): List<
         !itemDate.isBefore(previousMonthStart) && itemDate.isBefore(currentMonthStart)
     })
     val loadingThisMonth = loadingComponent(currentMonthLoad, previousMonthLoad) * 100f
+    val totalVPointsAcwr = loadingComponent(
+        totalVPointsForWindow(currentDate, 7),
+        totalVPointsForWindow(currentDate, 28)
+    )
+    val averageVPointsAcwr = loadingComponent(
+        meanDailyAverageVPointsForWindow(currentDate, 7),
+        meanDailyAverageVPointsForWindow(currentDate, 28)
+    )
+    val totalVPointsAcwrPercent = loadingComponent(totalVPointsAcwr, injuryTotalVPointsAcwrMean) * 100f
+    val averageVPointsAcwrPercent = loadingComponent(averageVPointsAcwr, injuryAverageVPointsAcwrMean) * 100f
+    val totalVPointsZScore = if (injuryTotalVPointsAcwrVariance > 0f) {
+        (totalVPointsAcwr - injuryTotalVPointsAcwrMean) / sqrt(injuryTotalVPointsAcwrVariance)
+    } else {
+        0f
+    }
+    val averageVPointsZScore = if (injuryAverageVPointsAcwrVariance > 0f) {
+        (averageVPointsAcwr - injuryAverageVPointsAcwrMean) / sqrt(injuryAverageVPointsAcwrVariance)
+    } else {
+        0f
+    }
+    val injuryProbabilityPercent = (
+        exp(
+            -0.5f * (
+                totalVPointsZScore * totalVPointsZScore +
+                    averageVPointsZScore * averageVPointsZScore
+                )
+        ) * 100f
+        ).coerceIn(0f, 100f)
 
-    val groupedByPrice = filteredItems.groupBy { it.price }
+    val groupedByPrice = gradeEstimateItems.groupBy { it.price }
     val priceFractions = groupedByPrice.mapValues { (_, items) ->
         val sendsForPrice = items.count { it.quantity > 0 }
         val attempts = items.count { it.quantity <= 0 }
@@ -827,7 +898,10 @@ private fun calculateHomeCalcs(itemList: List<Item>, baselineMonths: Int): List<
         send6try.toFloat(),
         loadingThisDay,
         loadingThisWeek,
-        loadingThisMonth
+        loadingThisMonth,
+        averageVPointsAcwrPercent,
+        totalVPointsAcwrPercent,
+        injuryProbabilityPercent
     )
 }
 
