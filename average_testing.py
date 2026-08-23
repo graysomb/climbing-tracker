@@ -1,6 +1,10 @@
 import pandas as pd
 import numpy as np
+import matplotlib
+
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from plot_export import save_all_figures
 
 # Optional model fitting
 from sklearn.linear_model import LogisticRegression
@@ -14,6 +18,9 @@ from sklearn.metrics import classification_report, roc_auc_score
 # ============================================================
 
 csv_path = "climb_data (4).csv"
+plot_output_dir = "average_testing_plot_outputs"
+
+plt.rcParams["figure.max_open_warning"] = 0
 
 filter_to_climbing_type = True
 climbing_type_value = 0
@@ -35,7 +42,12 @@ week_rule = "W-SUN"
 
 df = pd.read_csv(csv_path)
 
-df["time"] = pd.to_datetime(df["time"])
+df["time"] = pd.to_datetime(df["time"], errors="coerce")
+df["grade"] = pd.to_numeric(df["grade"], errors="coerce")
+df["send/reps"] = pd.to_numeric(df["send/reps"], errors="coerce")
+if "type" in df.columns:
+    df["type"] = pd.to_numeric(df["type"], errors="coerce")
+df = df.dropna(subset=["time"]).copy()
 df["date"] = df["time"].dt.floor("D")
 
 if filter_to_climbing_type and "type" in df.columns:
@@ -212,11 +224,12 @@ for week_end in weekly.index:
         row["injury_week"] = weekly.loc[week_end, "injury_week"]
         model_rows.append(row)
 
-model_df = pd.DataFrame(model_rows)
+model_df = pd.DataFrame(model_rows, columns=feature_cols + ["week_end", "week_load", "injury_week"])
 
 # Clean modeling data
 model_df = model_df.replace([np.inf, -np.inf], np.nan)
-model_df = model_df.dropna(subset=feature_cols + ["injury_week"]).copy()
+if not model_df.empty:
+    model_df = model_df.dropna(subset=feature_cols + ["injury_week"]).copy()
 
 print()
 print("Weekly injury labels:")
@@ -344,7 +357,6 @@ plt.title("Climbing load with past-only moving averages and injury weeks")
 plt.legend()
 plt.xticks(rotation=45)
 plt.tight_layout()
-plt.show()
 
 
 # ============================================================
@@ -390,7 +402,6 @@ plt.title("Workload overshoot with injury-week markers")
 plt.legend()
 plt.xticks(rotation=45)
 plt.tight_layout()
-plt.show()
 
 
 # ============================================================
@@ -430,7 +441,6 @@ plt.title("Absolute climbing load overshoot with injury-week markers")
 plt.legend()
 plt.xticks(rotation=45)
 plt.tight_layout()
-plt.show()
 
 
 # ============================================================
@@ -472,7 +482,6 @@ plt.title("Standardized climbing load overshoot with injury-week markers")
 plt.legend()
 plt.xticks(rotation=45)
 plt.tight_layout()
-plt.show()
 
 
 # ============================================================
@@ -506,4 +515,4 @@ if can_fit_model:
     plt.legend()
     plt.xticks(rotation=45)
     plt.tight_layout()
-    plt.show()
+save_all_figures(plot_output_dir)

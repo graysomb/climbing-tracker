@@ -44,6 +44,7 @@ import java.time.temporal.ChronoUnit
 class HomeViewModel(private val itemsRepository: ItemsRepository) : ViewModel() {
     private val calculationCache = LinkedHashMap<String, List<Float>>()
     private val vPointsChartCache = LinkedHashMap<String, VPointsChartModel>()
+    private val acwrChartCache = LinkedHashMap<String, AcwrChartModel>()
 
     /**
      * Holds home ui state. The list of items are retrieved from [ItemsRepository] and mapped to
@@ -128,6 +129,79 @@ class HomeViewModel(private val itemsRepository: ItemsRepository) : ViewModel() 
             model
         }
 
+    suspend fun getAcwrChartModel(itemList: List<Item>, eventList: List<Event>): AcwrChartModel =
+        withContext(Dispatchers.Default) {
+            val cacheKey = "${itemList.hashCode()}-${eventList.hashCode()}"
+            synchronized(acwrChartCache) { acwrChartCache[cacheKey] }?.let { return@withContext it }
+
+            val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
+            val climbsByDate = itemList
+                .asSequence()
+                .filter { it.type == 0 }
+                .groupBy { LocalDateTime.parse(it.name, formatter).toLocalDate() }
+            val injuryDates = eventList
+                .asSequence()
+                .filter { it.type == 0 }
+                .map { LocalDateTime.parse(it.time, formatter).toLocalDate() }
+                .distinct()
+                .sorted()
+                .toList()
+            val earliestDate = (climbsByDate.keys + injuryDates).minOrNull() ?: LocalDate.now()
+            val latestRecordedDate = (climbsByDate.keys + injuryDates).maxOrNull() ?: earliestDate
+            val latestDate = if (latestRecordedDate.isAfter(LocalDate.now())) latestRecordedDate else LocalDate.now()
+            val dayCount = ChronoUnit.DAYS.between(earliestDate, latestDate).toInt() + 1
+            val totalPrefix = FloatArray(dayCount + 1)
+            val meanPrefix = FloatArray(dayCount + 1)
+
+            for (dayIndex in 0 until dayCount) {
+                val date = earliestDate.plusDays(dayIndex.toLong())
+                val climbsForDay = climbsByDate[date].orEmpty()
+                val totalVPoints = climbsForDay.sumOf { it.price }.toFloat()
+                val meanVGrade = if (climbsForDay.isNotEmpty()) {
+                    totalVPoints / climbsForDay.size.toFloat()
+                } else 0f
+                totalPrefix[dayIndex + 1] = totalPrefix[dayIndex] + totalVPoints
+                meanPrefix[dayIndex + 1] = meanPrefix[dayIndex] + meanVGrade
+            }
+
+            fun windowSum(prefix: FloatArray, endIndex: Int, windowDays: Int): Float {
+                val startIndex = (endIndex - windowDays + 1).coerceAtLeast(0)
+                return prefix[endIndex + 1] - prefix[startIndex]
+            }
+
+            val meanVAcwr = ArrayList<ChartPoint>(dayCount)
+            val totalVAcwr = ArrayList<ChartPoint>(dayCount)
+            for (dayIndex in 0 until dayCount) {
+                val acuteTotal = windowSum(totalPrefix, dayIndex, 7)
+                val chronicTotal = windowSum(totalPrefix, dayIndex, 28)
+                val acuteMean = windowSum(meanPrefix, dayIndex, 7) / 7f
+                val chronicMean = windowSum(meanPrefix, dayIndex, 28) / 28f
+                val totalAcwr = if (chronicTotal > 0f) acuteTotal / chronicTotal else 0f
+                val meanAcwr = if (chronicMean > 0f) acuteMean / chronicMean else 0f
+                totalVAcwr.add(
+                    ChartPoint(dayIndex.toFloat(), totalAcwr / INJURY_TOTAL_ACWR_MEAN * 100f)
+                )
+                meanVAcwr.add(
+                    ChartPoint(dayIndex.toFloat(), meanAcwr / INJURY_MEAN_ACWR_MEAN * 100f)
+                )
+            }
+            val injuries = injuryDates.map { injuryDate ->
+                val dayIndex = ChronoUnit.DAYS.between(earliestDate, injuryDate).toInt()
+                val markerHeight = maxOf(
+                    meanVAcwr.getOrNull(dayIndex)?.y ?: 0f,
+                    totalVAcwr.getOrNull(dayIndex)?.y ?: 0f,
+                    0.05f
+                )
+                ChartPoint(dayIndex.toFloat(), markerHeight)
+            }
+            val model = AcwrChartModel(earliestDate, meanVAcwr, totalVAcwr, injuries)
+            synchronized(acwrChartCache) {
+                if (acwrChartCache.size >= MAX_CACHE_ENTRIES) acwrChartCache.clear()
+                acwrChartCache[cacheKey] = model
+            }
+            model
+        }
+
     fun timeTickFlow(): Flow<String> = flow {
         while (true) {
             val currentDateTime = LocalDateTime.now()
@@ -143,6 +217,8 @@ class HomeViewModel(private val itemsRepository: ItemsRepository) : ViewModel() 
     companion object {
         private const val TIMEOUT_MILLIS = 5_000L
         private const val MAX_CACHE_ENTRIES = 24
+        private const val INJURY_TOTAL_ACWR_MEAN = 0.5084f
+        private const val INJURY_MEAN_ACWR_MEAN = 1.9742f
     }
 }
 
@@ -152,6 +228,13 @@ data class VPointsChartModel(
     val earliestDate: LocalDate,
     val sends: List<ChartPoint>,
     val attempts: List<ChartPoint>
+)
+
+data class AcwrChartModel(
+    val earliestDate: LocalDate,
+    val meanVAcwr: List<ChartPoint>,
+    val totalVAcwr: List<ChartPoint>,
+    val injuries: List<ChartPoint>
 )
 
 /**

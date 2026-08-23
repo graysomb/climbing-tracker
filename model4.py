@@ -1,6 +1,10 @@
 import numpy as np
 import pandas as pd
+import matplotlib
+
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from pathlib import Path
 from scipy.optimize import curve_fit, minimize
 from scipy.stats import chi2, f, linregress, mannwhitneyu, pearsonr, spearmanr, t, ttest_ind
 
@@ -9,12 +13,16 @@ from scipy.stats import chi2, f, linregress, mannwhitneyu, pearsonr, spearmanr, 
 csv_path = "climb_data (4).csv"
 date_col = "time"
 group_by_outside = True
+plot_output_dir = Path("model4_plot_outputs")
 past_month_days = 28
 next_week_days = 7
+fatigue_baseline_days = 90
 rolling_x50_days = 60
 min_rolling_fit_attempts = 30
 log_base = "e"
 min_probability = 1e-6
+
+plt.rcParams["figure.max_open_warning"] = 0
 
 injury_dates = pd.to_datetime([
     "2025-09-02",
@@ -35,6 +43,55 @@ injury_dates = pd.to_datetime([
     "2023-05-16",
     "2023-04-06",
 ])
+
+
+def slugify_title(title):
+    title = title.lower().strip()
+    chars = []
+
+    for char in title:
+        if char.isalnum():
+            chars.append(char)
+        elif chars and chars[-1] != "_":
+            chars.append("_")
+
+    slug = "".join(chars).strip("_")
+    return slug[:80] or "plot"
+
+
+def figure_title(fig):
+    if fig._suptitle is not None:
+        title = fig._suptitle.get_text()
+        if title:
+            return title
+
+    for ax in fig.axes:
+        title = ax.get_title()
+        if title:
+            return title
+
+    return "plot"
+
+
+def save_all_figures(output_dir=plot_output_dir):
+    output_dir.mkdir(parents=True, exist_ok=True)
+    saved_paths = []
+
+    for index, fig_num in enumerate(plt.get_fignums(), start=1):
+        fig = plt.figure(fig_num)
+        title = figure_title(fig)
+        file_name = f"{index:02d}_{slugify_title(title)}.png"
+        output_path = output_dir / file_name
+
+        fig.savefig(output_path, dpi=200, bbox_inches="tight")
+        saved_paths.append(output_path)
+
+    plt.close("all")
+
+    print()
+    print(f"Saved {len(saved_paths)} plot PNG files to {output_dir}:")
+    for output_path in saved_paths:
+        print(f"  {output_path}")
 
 
 def logistic(grade, x50, scale):
@@ -721,6 +778,41 @@ calendar_analysis_df["past_month_performance"] = (
     past_month_attempts.replace(0, np.nan)
 )
 
+weekly_success_sends = (
+    calendar_analysis_df["n_sends"]
+    .rolling(next_week_days, min_periods=1)
+    .sum()
+)
+weekly_success_attempts = (
+    calendar_analysis_df["n_attempts"]
+    .rolling(next_week_days, min_periods=1)
+    .sum()
+)
+baseline_success_sends = (
+    calendar_analysis_df["n_sends"]
+    .shift(next_week_days)
+    .rolling(fatigue_baseline_days, min_periods=1)
+    .sum()
+)
+baseline_success_attempts = (
+    calendar_analysis_df["n_attempts"]
+    .shift(next_week_days)
+    .rolling(fatigue_baseline_days, min_periods=1)
+    .sum()
+)
+calendar_analysis_df["weekly_success"] = (
+    weekly_success_sends /
+    weekly_success_attempts.replace(0, np.nan)
+)
+calendar_analysis_df["baseline_success_90d"] = (
+    baseline_success_sends /
+    baseline_success_attempts.replace(0, np.nan)
+)
+calendar_analysis_df["fatigue_ratio"] = (
+    calendar_analysis_df["weekly_success"] /
+    calendar_analysis_df["baseline_success_90d"].replace(0, np.nan)
+)
+
 past_60d_total_performance = (
     calendar_analysis_df["total_performance"]
     .shift(1)
@@ -900,6 +992,30 @@ performance_momentum_results = pd.DataFrame([
     for test_df, predictor_col, outcome_col, label in performance_momentum_specs
 ])
 
+fatigue_ratio_specs = [
+    (
+        calendar_analysis_df,
+        "fatigue_ratio",
+        "next_day_mean_performance",
+        "Simple fatigue ratio predicts next-day performance"
+    ),
+    (
+        weekly_anchor_df,
+        "fatigue_ratio",
+        "next_week_mean_performance",
+        "Simple fatigue ratio predicts next-week performance"
+    )
+]
+
+fatigue_ratio_results = pd.DataFrame([
+    {
+        **test_predictor(test_df, predictor_col, outcome_col),
+        "outcome": outcome_col,
+        "label": label
+    }
+    for test_df, predictor_col, outcome_col, label in fatigue_ratio_specs
+])
+
 multi_predictor_cols = [
     "past_month_attempt_vgrades",
     "past_month_avg_session_duration_min",
@@ -980,6 +1096,27 @@ print("Past performance is attempt-weighted and excludes the current day.")
 print("Daily outcome is the next calendar day; weekly outcome is Monday-through-Sunday.")
 print(
     performance_momentum_results[
+        [
+            "label",
+            "n",
+            "slope",
+            "r_squared",
+            "linear_p",
+            "pearson_r",
+            "pearson_p",
+            "spearman_r",
+            "spearman_p"
+        ]
+    ]
+)
+
+print("\nSimple fatigue ratio predicting future performance")
+print("fatigue_ratio = weekly_success / baseline_success")
+print("weekly_success = sends in trailing 7 days / attempts in trailing 7 days")
+print("baseline_success = sends in prior 90 days / attempts in prior 90 days")
+print("The 90-day baseline excludes the current trailing 7-day week.")
+print(
+    fatigue_ratio_results[
         [
             "label",
             "n",
@@ -1503,6 +1640,40 @@ fig.suptitle("Performance momentum tests")
 fig.tight_layout()
 
 
+fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+
+for ax, (test_df, predictor_col, outcome_col, label) in zip(
+    axes,
+    fatigue_ratio_specs
+):
+    plot_df = test_df[[predictor_col, outcome_col]].dropna().copy()
+    result = fatigue_ratio_results.loc[
+        fatigue_ratio_results["label"] == label
+    ].iloc[0]
+
+    x = plot_df[predictor_col].to_numpy(dtype=float)
+    y = plot_df[outcome_col].to_numpy(dtype=float)
+
+    ax.scatter(x, y, alpha=0.45, s=24)
+
+    if np.isfinite(result["slope"]):
+        x_grid = np.linspace(x.min(), x.max(), 200)
+        y_grid = result["intercept"] + result["slope"] * x_grid
+        ax.plot(x_grid, y_grid, color="red", linewidth=2)
+
+    ax.axhline(0, linestyle="--", linewidth=1)
+    ax.axvline(1, linestyle="--", linewidth=1)
+    ax.set_xlabel("Fatigue ratio: weekly success / 90-day baseline success")
+    ax.set_ylabel(f"Future performance [{unit_label}]")
+    ax.set_title(
+        f"{label}\n"
+        f"R2={result['r_squared']:.3f}, p={result['linear_p']:.3g}"
+    )
+
+fig.suptitle("Simple success-rate fatigue tests")
+fig.tight_layout()
+
+
 fig, axes = plt.subplots(2, 2, figsize=(13, 10))
 
 multi_plot_specs = [
@@ -1846,4 +2017,4 @@ axes[1].legend()
 
 fig.tight_layout()
 
-plt.show()
+save_all_figures()

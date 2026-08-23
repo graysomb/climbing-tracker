@@ -66,6 +66,9 @@ def figure_title(fig):
 
 def save_all_figures(output_dir=plot_output_dir):
     output_dir.mkdir(parents=True, exist_ok=True)
+    for old_png in output_dir.glob("*.png"):
+        old_png.unlink()
+
     saved_paths = []
 
     for index, fig_num in enumerate(plt.get_fignums(), start=1):
@@ -1345,6 +1348,7 @@ plt.tight_layout()
 
 acute_days = 7
 chronic_days = 28
+fatigue_baseline_days = 90
 
 # Start from daily information load
 acwr_df = daily_load_info.copy()
@@ -1378,6 +1382,41 @@ acwr_df["total_send_plus_failure_as_send_surprise"] = (
 acwr_df["n_attempts"] = acwr_df["n_attempts"].fillna(0)
 acwr_df["n_sends"] = acwr_df["n_sends"].fillna(0)
 acwr_df["n_fails"] = acwr_df["n_fails"].fillna(0)
+
+weekly_success_sends = (
+    acwr_df["n_sends"]
+    .rolling(acute_days, min_periods=1)
+    .sum()
+)
+weekly_success_attempts = (
+    acwr_df["n_attempts"]
+    .rolling(acute_days, min_periods=1)
+    .sum()
+)
+baseline_success_sends = (
+    acwr_df["n_sends"]
+    .shift(acute_days)
+    .rolling(fatigue_baseline_days, min_periods=1)
+    .sum()
+)
+baseline_success_attempts = (
+    acwr_df["n_attempts"]
+    .shift(acute_days)
+    .rolling(fatigue_baseline_days, min_periods=1)
+    .sum()
+)
+acwr_df["weekly_success"] = (
+    weekly_success_sends /
+    weekly_success_attempts.replace(0, np.nan)
+)
+acwr_df["baseline_success_90d"] = (
+    baseline_success_sends /
+    baseline_success_attempts.replace(0, np.nan)
+)
+acwr_df["fatigue_ratio"] = (
+    acwr_df["weekly_success"] /
+    acwr_df["baseline_success_90d"].replace(0, np.nan)
+)
 
 # For mean load, missing days are rest days.
 # You have two reasonable options:
@@ -1790,6 +1829,32 @@ for value_col, acwr_mode, _ in additional_acwr_specs:
 
 additional_acwr_df = additional_acwr_df.replace([np.inf, -np.inf], np.nan)
 
+fatigue_acwr_df = (
+    acwr_df[[
+        "day",
+        "weekly_success",
+        "baseline_success_90d",
+        "fatigue_ratio"
+    ]]
+    .merge(
+        additional_acwr_df[["day", "acwr_total_vpoints", "acwr_avg_vpoints"]],
+        on="day",
+        how="left"
+    )
+)
+fatigue_acwr_df["injury"] = (
+    fatigue_acwr_df["day"].dt.normalize().isin(injury_dates.normalize()).astype(int)
+)
+fatigue_acwr_df["strain_total_vpoints"] = (
+    fatigue_acwr_df["acwr_total_vpoints"] /
+    fatigue_acwr_df["fatigue_ratio"].replace(0, np.nan)
+)
+fatigue_acwr_df["strain_avg_vpoints"] = (
+    fatigue_acwr_df["acwr_avg_vpoints"] /
+    fatigue_acwr_df["fatigue_ratio"].replace(0, np.nan)
+)
+fatigue_acwr_df = fatigue_acwr_df.replace([np.inf, -np.inf], np.nan)
+
 box_acwr_specs = [
     ("acwr_total_load", "Total info load", acwr_df),
     ("acwr_mean_load", "Mean info load", acwr_df),
@@ -1867,6 +1932,179 @@ def binary_logistic_lrt_p(feature_values, injury_flags):
     full_log_likelihood = -result.fun
     likelihood_ratio = max(0, 2 * (full_log_likelihood - null_log_likelihood))
     return chi2.sf(likelihood_ratio, df=1)
+
+
+plt.figure(figsize=(12, 5))
+fatigue_plot_df = fatigue_acwr_df.dropna(subset=["fatigue_ratio"]).copy()
+plt.plot(
+    fatigue_plot_df["day"],
+    fatigue_plot_df["fatigue_ratio"],
+    marker="o",
+    linewidth=1.5,
+    markersize=3,
+    label="fatigue ratio"
+)
+plt.axhline(1, linestyle="--", linewidth=1.5, label="baseline success")
+add_injury_markers(fatigue_plot_df, "day", "fatigue_ratio", annotate=True)
+plt.xlabel("Date")
+plt.ylabel("Fatigue ratio")
+plt.title("Simple fatigue ratio over time")
+plt.xticks(rotation=45, ha="right")
+plt.legend()
+plt.tight_layout()
+
+
+fig, axes = plt.subplots(3, 1, figsize=(12, 9), sharex=True)
+fatigue_timeline_specs = [
+    ("fatigue_ratio", "Fatigue ratio", "success vs baseline"),
+    ("acwr_total_vpoints", "Total V-points ACWR", "total attempted V-points"),
+    ("acwr_avg_vpoints", "Average V-points ACWR", "average attempted V-grade")
+]
+
+for ax, (y_col, ylabel, title) in zip(axes, fatigue_timeline_specs):
+    plot_df = fatigue_acwr_df.dropna(subset=[y_col]).copy()
+    ax.plot(
+        plot_df["day"],
+        plot_df[y_col],
+        marker="o",
+        linewidth=1.3,
+        markersize=2.5,
+        label=ylabel
+    )
+    add_injury_markers(plot_df, "day", y_col, ax=ax)
+    if y_col == "fatigue_ratio":
+        ax.axhline(1, linestyle="--", linewidth=1)
+    else:
+        ax.axhline(0.8, linestyle=":", linewidth=1)
+        ax.axhline(1.3, linestyle=":", linewidth=1)
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+    ax.legend(loc="best")
+
+axes[-1].set_xlabel("Date")
+axes[-1].tick_params(axis="x", rotation=45)
+fig.suptitle("Fatigue and V-point ACWR over time")
+fig.tight_layout()
+
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+rng = np.random.default_rng(42)
+fatigue_scatter_specs = [
+    ("acwr_total_vpoints", "Total V-points ACWR"),
+    ("acwr_avg_vpoints", "Average V-points ACWR")
+]
+
+for ax, (acwr_col, xlabel) in zip(axes, fatigue_scatter_specs):
+    plot_df = fatigue_acwr_df[[acwr_col, "fatigue_ratio", "injury"]].dropna().copy()
+    non_injury = plot_df[plot_df["injury"] == 0]
+    injury = plot_df[plot_df["injury"] == 1]
+
+    ax.scatter(
+        non_injury[acwr_col],
+        non_injury["fatigue_ratio"],
+        alpha=0.22,
+        s=18,
+        label="non-injury days"
+    )
+    ax.scatter(
+        injury[acwr_col],
+        injury["fatigue_ratio"],
+        marker="x",
+        s=80,
+        linewidths=2,
+        color="red",
+        label="injury dates"
+    )
+    ax.axhline(1, linestyle="--", linewidth=1)
+    ax.axvline(0.8, linestyle=":", linewidth=1)
+    ax.axvline(1.3, linestyle=":", linewidth=1)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel("Fatigue ratio")
+    ax.set_title(f"Fatigue vs {xlabel}")
+    ax.legend()
+
+fig.suptitle("Fatigue-ACWR relationship on injury and non-injury days")
+fig.tight_layout()
+
+
+fatigue_injury_df = fatigue_acwr_df.copy()
+fatigue_injury_df["min_fatigue_ratio_7d"] = (
+    fatigue_injury_df["fatigue_ratio"]
+    .rolling(acwr_injury_lookback_days, min_periods=1)
+    .min()
+)
+fatigue_injury_df["max_fatigue_ratio_7d"] = (
+    fatigue_injury_df["fatigue_ratio"]
+    .rolling(acwr_injury_lookback_days, min_periods=1)
+    .max()
+)
+fatigue_injury_df["max_strain_total_vpoints_7d"] = (
+    fatigue_injury_df["strain_total_vpoints"]
+    .rolling(acwr_injury_lookback_days, min_periods=1)
+    .max()
+)
+fatigue_injury_df["max_strain_avg_vpoints_7d"] = (
+    fatigue_injury_df["strain_avg_vpoints"]
+    .rolling(acwr_injury_lookback_days, min_periods=1)
+    .max()
+)
+
+fatigue_box_specs = [
+    ("fatigue_ratio", "Fatigue ratio"),
+    ("min_fatigue_ratio_7d", "Min fatigue ratio in prior 7 days"),
+    ("max_fatigue_ratio_7d", "Max fatigue ratio in prior 7 days"),
+    ("max_strain_total_vpoints_7d", "Max total V-points ACWR / fatigue"),
+    ("max_strain_avg_vpoints_7d", "Max average V-points ACWR / fatigue")
+]
+
+fig, axes = plt.subplots(2, 3, figsize=(15, 8))
+axes = axes.ravel()
+
+for ax, (feature_col, label) in zip(axes, fatigue_box_specs):
+    plot_df = fatigue_injury_df[[feature_col, "injury"]].dropna().copy()
+    non_injury_values = plot_df.loc[plot_df["injury"] == 0, feature_col]
+    injury_values = plot_df.loc[plot_df["injury"] == 1, feature_col]
+
+    mann_result = mannwhitneyu(
+        injury_values,
+        non_injury_values,
+        alternative="two-sided"
+    )
+    auc = mann_result.statistic / (len(injury_values) * len(non_injury_values))
+    logistic_p = binary_logistic_lrt_p(plot_df[feature_col], plot_df["injury"])
+
+    ax.boxplot(
+        [non_injury_values, injury_values],
+        labels=["Non-injury days", "Injury dates"],
+        showfliers=False
+    )
+    ax.scatter(
+        rng.normal(1, 0.035, len(non_injury_values)),
+        non_injury_values,
+        alpha=0.18,
+        s=16
+    )
+    ax.scatter(
+        rng.normal(2, 0.035, len(injury_values)),
+        injury_values,
+        marker="x",
+        s=70,
+        linewidths=2,
+        color="red"
+    )
+    ax.axhline(1, linestyle="--", linewidth=1)
+    ax.set_title(
+        f"{label}\n"
+        f"MW p={mann_result.pvalue:.3g}, "
+        f"logit p={logistic_p:.3g}, AUC={auc:.2f}"
+    )
+    ax.set_ylabel("Feature value")
+
+for ax in axes[len(fatigue_box_specs):]:
+    ax.axis("off")
+
+fig.suptitle("Fatigue and fatigue-ACWR strain on injury dates")
+fig.tight_layout()
 
 
 def fit_binary_logistic_probability(feature_values, injury_flags):
@@ -2234,6 +2472,22 @@ injury_test_df["total_vgrades_7d"] = (
     .sum()
 )
 
+fatigue_feature_lookup = fatigue_injury_df[
+    [
+        "day",
+        "fatigue_ratio",
+        "min_fatigue_ratio_7d",
+        "max_fatigue_ratio_7d",
+        "max_strain_total_vpoints_7d",
+        "max_strain_avg_vpoints_7d"
+    ]
+].copy()
+injury_test_df = injury_test_df.merge(
+    fatigue_feature_lookup,
+    on="day",
+    how="left"
+)
+
 
 def logistic_lrt_test(data, feature_col):
     test_data = data[[feature_col, "injury"]].dropna().copy()
@@ -2327,7 +2581,18 @@ injury_predictor_specs = [
     ("max_mean_load_7d", "Max mean load"),
     ("max_total_load_7d", "Max total load"),
     ("max_mean_performance_7d", "Max mean performance"),
-    ("total_vgrades_7d", "Total V-grades attempted")
+    ("total_vgrades_7d", "Total V-grades attempted"),
+    ("fatigue_ratio", "Fatigue ratio"),
+    ("min_fatigue_ratio_7d", "Min fatigue ratio"),
+    ("max_fatigue_ratio_7d", "Max fatigue ratio"),
+    (
+        "max_strain_total_vpoints_7d",
+        "Max total V-points ACWR / fatigue"
+    ),
+    (
+        "max_strain_avg_vpoints_7d",
+        "Max average V-points ACWR / fatigue"
+    )
 ]
 
 injury_test_results = []
@@ -2355,7 +2620,15 @@ print(
     ]
 )
 
-fig, axes = plt.subplots(4, 3, figsize=(15, 14))
+n_injury_predictors = len(injury_predictor_specs)
+n_injury_cols = 3
+n_injury_rows = int(np.ceil(n_injury_predictors / n_injury_cols))
+fig, axes = plt.subplots(
+    n_injury_rows,
+    n_injury_cols,
+    figsize=(5 * n_injury_cols, 3.5 * n_injury_rows),
+    squeeze=False
+)
 axes = axes.ravel()
 rng = np.random.default_rng(42)
 
@@ -2400,7 +2673,12 @@ fig.suptitle("Injury vs non-injury days: 7-day predictors")
 fig.tight_layout()
 
 
-fig, axes = plt.subplots(4, 3, figsize=(15, 14))
+fig, axes = plt.subplots(
+    n_injury_rows,
+    n_injury_cols,
+    figsize=(5 * n_injury_cols, 3.5 * n_injury_rows),
+    squeeze=False
+)
 axes = axes.ravel()
 
 for ax, (feature_col, label) in zip(axes, injury_predictor_specs):

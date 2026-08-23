@@ -1,21 +1,37 @@
 import numpy as np
 import pandas as pd
+import matplotlib
+
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
+from plot_export import save_all_figures
 
 # ---- settings ----
 csv_path = "climb_data (4).csv"
 group_by_outside = True   # set False to fit all climbs together
+plot_output_dir = "model2_plot_outputs"
+
+plt.rcParams["figure.max_open_warning"] = 0
 
 # ---- load / clean ----
 df = pd.read_csv(csv_path)
 
+df["send/reps"] = pd.to_numeric(df["send/reps"], errors="coerce")
+df["grade"] = pd.to_numeric(df["grade"], errors="coerce")
+df["outside"] = pd.to_numeric(df["outside"], errors="coerce").fillna(0)
+
 # Only keep actual climb attempts: send/reps should be 0 = fail, 1 = send
 df = df[df["send/reps"].isin([0, 1])].copy()
 
-df["grade"] = pd.to_numeric(df["grade"], errors="coerce")
 df["send"] = df["send/reps"].astype(float)
-df = df.dropna(subset=["grade", "send"])
+df = df.dropna(subset=["grade", "send"]).copy()
+
+if df.empty:
+    raise ValueError(
+        "No climb attempts found after cleaning the CSV. "
+        "Check that send/reps contains 0 for fails and 1 for sends."
+    )
 
 # ---- logistic model ----
 # x50 = grade where send probability is 50%
@@ -2202,4 +2218,4 @@ plt.title("Total V-points per week")
 plt.xticks(rotation=45, ha="right")
 
 plt.tight_layout()
-plt.show()
+save_all_figures(plot_output_dir)

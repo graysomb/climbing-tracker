@@ -1,6 +1,10 @@
 import pandas as pd
 import numpy as np
+import matplotlib
+
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from plot_export import save_all_figures
 
 from sklearn.linear_model import LogisticRegression, LinearRegression
 from sklearn.preprocessing import StandardScaler
@@ -14,6 +18,9 @@ from sklearn.model_selection import TimeSeriesSplit
 # ============================================================
 
 csv_path = "climb_data (4).csv"
+plot_output_dir = "de_model_plot_outputs"
+
+plt.rcParams["figure.max_open_warning"] = 0
 
 # Try different time constants for the one-state readiness model
 tau_grid = [1, 2, 3, 5, 7, 10, 14, 21, 30, 45, 60, 90, 120]
@@ -37,7 +44,12 @@ n_splits = 5
 
 df = pd.read_csv(csv_path)
 
-df["time"] = pd.to_datetime(df["time"])
+df["time"] = pd.to_datetime(df["time"], errors="coerce")
+df["grade"] = pd.to_numeric(df["grade"], errors="coerce")
+df["send/reps"] = pd.to_numeric(df["send/reps"], errors="coerce")
+if "type" in df.columns:
+    df["type"] = pd.to_numeric(df["type"], errors="coerce")
+df = df.dropna(subset=["time"]).copy()
 df["date"] = df["time"].dt.floor("D")
 
 if filter_to_climbing_type and "type" in df.columns:
@@ -370,7 +382,6 @@ plt.ylabel("Held-out log loss")
 plt.title("Readiness timescale search")
 plt.legend()
 plt.tight_layout()
-plt.show()
 
 
 # ============================================================
@@ -400,7 +411,6 @@ plt.title("Daily load and fitted readiness state")
 plt.legend()
 plt.xticks(rotation=45)
 plt.tight_layout()
-plt.show()
 
 
 # ============================================================
@@ -438,7 +448,6 @@ plt.title("Actual vs predicted send probability")
 plt.legend()
 plt.xticks(rotation=45)
 plt.tight_layout()
-plt.show()
 
 
 # ============================================================
@@ -460,7 +469,6 @@ plt.xlabel("Readiness/load-history state")
 plt.ylabel("Performance residual: send - grade-only expected send probability")
 plt.title("Does readiness explain above/below-grade performance?")
 plt.tight_layout()
-plt.show()
 
 
 # ============================================================
@@ -484,4 +492,4 @@ plt.title("Daily performance relative to grade-only expectation")
 plt.legend()
 plt.xticks(rotation=45)
 plt.tight_layout()
-plt.show()
+save_all_figures(plot_output_dir)

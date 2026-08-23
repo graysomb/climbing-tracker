@@ -114,6 +114,7 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.time.temporal.TemporalAdjusters
 import java.time.temporal.WeekFields
 import java.util.Date
 import java.util.Locale
@@ -193,6 +194,7 @@ fun HomeScreen(
             onEventSave = viewModel::addEvent,
             calculateStatistics = viewModel::getHomeCalculations,
             prepareVPointsChart = viewModel::getVPointsChartModel,
+            prepareAcwrChart = viewModel::getAcwrChartModel,
             modifier = modifier
                 .padding(innerPadding)
                 .fillMaxSize()
@@ -221,6 +223,7 @@ private fun HomeBody(
     onEventSave: (Event) -> Unit,
     calculateStatistics: suspend (List<Item>, Int) -> List<Float>,
     prepareVPointsChart: suspend (List<Item>, Boolean) -> VPointsChartModel,
+    prepareAcwrChart: suspend (List<Item>, List<Event>) -> AcwrChartModel,
     modifier: Modifier = Modifier
 ) {
     var plotByWeek by remember { mutableStateOf(false) }
@@ -460,22 +463,41 @@ private fun HomeBody(
                             }
                         }
                         item {
-                            preparedVPointsChartState.value?.let { chartModel ->
-                                ItemBarChart(
-                                    filteredItems,
-                                    Modifier.height(280.dp),
-                                    plotByWeek,
-                                    showLoadOverlay = true,
-                                    baselineMonths = baselineMonths,
-                                    preparedData = chartModel
-                                )
-                            } ?: Spacer(Modifier.height(280.dp))
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                ChartTitle("V-Points and 7-Day Load")
+                                preparedVPointsChartState.value?.let { chartModel ->
+                                    ItemBarChart(
+                                        filteredItems,
+                                        Modifier.height(280.dp),
+                                        plotByWeek,
+                                        showLoadOverlay = true,
+                                        baselineMonths = baselineMonths,
+                                        preparedData = chartModel
+                                    )
+                                } ?: Spacer(Modifier.height(280.dp))
+                            }
                         }
                         item {
-                            VPointsMovingAverageChart(filteredItems, Modifier.height(280.dp))
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                ChartTitle("V-Points Moving Averages")
+                                VPointsMovingAverageChart(filteredItems, Modifier.height(280.dp))
+                            }
                         }
                         item {
-                            WeeklySentGradeChart(filteredItems, Modifier.height(280.dp))
+                            AcwrChartSection(
+                                itemList = filteredItems,
+                                eventList = eventList,
+                                prepareAcwrChart = prepareAcwrChart
+                            )
+                        }
+                        item {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                ChartTitle("Weekly Sent Grades")
+                                WeeklySentGradeChart(filteredItems, Modifier.height(280.dp))
+                            }
+                        }
+                        item {
+                            ChartTitle("Flash / Redpoint / Project Grades")
                         }
                         item {
                             Button(
@@ -510,16 +532,28 @@ private fun HomeBody(
                             }
                         }
                         item {
-                            ItemBarChartHP(filteredItems, Modifier.height(280.dp), plotByWeek)
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                ChartTitle("Hang and Pull Volume")
+                                ItemBarChartHP(filteredItems, Modifier.height(280.dp), plotByWeek)
+                            }
                         }
                         item {
-                            ItemBarChartProb(filteredItems, Modifier.height(280.dp), 0, moFilt)
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                ChartTitle("Send Probability by Grade")
+                                ItemBarChartProb(filteredItems, Modifier.height(280.dp), 0, moFilt)
+                            }
                         }
                         item {
-                            ItemBarChartProb(filteredItems, Modifier.height(280.dp), 1, moFilt)
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                ChartTitle("V-Points Sent by Grade")
+                                ItemBarChartProb(filteredItems, Modifier.height(280.dp), 1, moFilt)
+                            }
                         }
                         item {
-                            ItemBarChartProb(filteredItems, Modifier.height(280.dp), 2, moFilt)
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                ChartTitle("Attempts by Grade")
+                                ItemBarChartProb(filteredItems, Modifier.height(280.dp), 2, moFilt)
+                            }
                         }
                     }
                     else -> Column(
@@ -800,8 +834,12 @@ internal fun calculateHomeCalcs(itemList: List<Item>, baselineMonths: Int): List
         return (windowDays - 1 downTo 0).map { daysAgo -> endDate.minusDays(daysAgo) }
     }
 
-    fun loadPercentForWindow(endDate: LocalDate, windowDays: Long): Float {
-        val windowStart = endDate.minusDays(windowDays - 1)
+    fun loadPercentForRange(
+        windowStart: LocalDate,
+        endDate: LocalDate,
+        expectedDays: Long,
+        activeBaselineDaysOnly: Boolean
+    ): Float {
         val baselineStart = windowStart.minusMonths(baselineMonthCount)
         val effectiveBaselineStart = earliestClimbDate?.let { earliestDate ->
             if (baselineStart.isAfter(earliestDate)) baselineStart else earliestDate
@@ -810,7 +848,7 @@ internal fun calculateHomeCalcs(itemList: List<Item>, baselineMonths: Int): List
             val itemDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
             !itemDate.isBefore(effectiveBaselineStart) && itemDate.isBefore(windowStart)
         }
-        val baselineDayCount = if (windowDays == 1L) {
+        val baselineDayCount = if (activeBaselineDaysOnly) {
             baselineItems
                 .groupBy { LocalDateTime.parse(it.name, formatter).toLocalDate() }
                 .count { (_, itemsForDay) -> triesLoadForItems(itemsForDay) > 0f }
@@ -829,7 +867,16 @@ internal fun calculateHomeCalcs(itemList: List<Item>, baselineMonths: Int): List
         }
         val windowLoad = triesLoadForItems(windowItems)
 
-        return loadingComponent(windowLoad, baselineTriesPerDay * windowDays.toFloat()) * 100f
+        return loadingComponent(windowLoad, baselineTriesPerDay * expectedDays.toFloat()) * 100f
+    }
+
+    fun loadPercentForWindow(endDate: LocalDate, windowDays: Long): Float {
+        return loadPercentForRange(
+            windowStart = endDate.minusDays(windowDays - 1),
+            endDate = endDate,
+            expectedDays = windowDays,
+            activeBaselineDaysOnly = windowDays == 1L
+        )
     }
 
     fun totalVPointsForWindow(endDate: LocalDate, windowDays: Long): Float {
@@ -849,7 +896,14 @@ internal fun calculateHomeCalcs(itemList: List<Item>, baselineMonths: Int): List
     }
 
     val loadingThisDay = loadPercentForWindow(currentDate, 1)
-    val loadingThisWeek = loadPercentForWindow(currentDate, 7)
+    val firstDayOfWeek = WeekFields.of(Locale.getDefault()).firstDayOfWeek
+    val currentWeekStart = currentDate.with(TemporalAdjusters.previousOrSame(firstDayOfWeek))
+    val loadingThisWeek = loadPercentForRange(
+        windowStart = currentWeekStart,
+        endDate = currentDate,
+        expectedDays = 7,
+        activeBaselineDaysOnly = false
+    )
     val currentMonthStart = currentDate.withDayOfMonth(1)
     val previousMonthStart = currentMonthStart.minusMonths(1)
     val currentMonthLoad = triesLoadForItems(climbItems.filter { item ->
@@ -1406,6 +1460,138 @@ fun ItemBarChartProb(itemList: List<Item>, modifier: Modifier = Modifier, intege
     )
 }
 
+
+@Composable
+private fun ChartTitle(text: String) {
+    Text(
+        text = text,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = dimensionResource(id = R.dimen.padding_small)),
+        textAlign = TextAlign.Center,
+        style = MaterialTheme.typography.titleMedium
+    )
+}
+
+@Composable
+private fun AcwrChartSection(
+    itemList: List<Item>,
+    eventList: List<Event>,
+    prepareAcwrChart: suspend (List<Item>, List<Event>) -> AcwrChartModel
+) {
+    val chartState = produceState<AcwrChartModel?>(
+        initialValue = null,
+        itemList,
+        eventList
+    ) {
+        value = prepareAcwrChart(itemList, eventList)
+    }
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        ChartTitle("ACWR and Recorded Injuries")
+        chartState.value?.let { chartModel ->
+            AcwrChart(chartModel, Modifier.height(280.dp))
+        } ?: run {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            Spacer(Modifier.height(276.dp))
+        }
+    }
+}
+
+@Composable
+private fun AcwrChart(model: AcwrChartModel, modifier: Modifier = Modifier) {
+    var defaultViewportKey by remember { mutableStateOf<String?>(null) }
+    val chartKey = "acwr-${model.hashCode()}"
+    val lineData = remember(model) {
+        val meanDataSet = LineDataSet(
+            model.meanVAcwr.map { Entry(it.x, it.y) },
+            "Mean V ACWR %"
+        ).apply {
+            color = Color.CYAN
+            setDrawCircles(false)
+            lineWidth = 2f
+            setDrawValues(false)
+        }
+        val totalDataSet = LineDataSet(
+            model.totalVAcwr.map { Entry(it.x, it.y) },
+            "Total V ACWR %"
+        ).apply {
+            color = Color.MAGENTA
+            setDrawCircles(false)
+            lineWidth = 2f
+            setDrawValues(false)
+        }
+        val injuryDataSet = LineDataSet(
+            model.injuries.map { Entry(it.x, it.y) },
+            "Injury"
+        ).apply {
+            color = Color.RED
+            setCircleColor(Color.RED)
+            circleRadius = 5f
+            setDrawCircleHole(false)
+            setDrawCircles(true)
+            lineWidth = 0f
+            setDrawValues(false)
+        }
+        LineData(meanDataSet, totalDataSet, injuryDataSet).apply { setDrawValues(false) }
+    }
+    val viewportKey = "${lineData.xMin}-${lineData.xMax}"
+    val defaultVisibleDays = 90f
+
+    AndroidView(
+        modifier = modifier.fillMaxWidth(),
+        factory = { context ->
+            CombinedChart(context).apply {
+                xAxis.textSize = 16f
+                xAxis.textColor = Color.CYAN
+                xAxis.position = com.github.mikephil.charting.components.XAxis.XAxisPosition.BOTTOM
+                axisLeft.textSize = 16f
+                axisLeft.textColor = Color.CYAN
+                axisLeft.axisMinimum = 0f
+                axisRight.isEnabled = false
+                data = CombinedData().apply { setData(lineData) }
+                description.isEnabled = false
+                legend.textSize = 16f
+                legend.textColor = Color.CYAN
+                xAxis.valueFormatter = object : ValueFormatter() {
+                    override fun getFormattedValue(value: Float): String {
+                        return model.earliestDate
+                            .plusDays(value.toLong())
+                            .format(DateTimeFormatter.ofPattern("MM-dd"))
+                    }
+                }
+            }
+        },
+        update = { chart ->
+            if (chart.tag == chartKey) return@AndroidView
+            chart.tag = chartKey
+            chart.data = CombinedData().apply { setData(lineData) }
+            chart.axisLeft.axisMinimum = 0f
+            chart.axisRight.isEnabled = false
+            chart.xAxis.valueFormatter = object : ValueFormatter() {
+                override fun getFormattedValue(value: Float): String {
+                    return model.earliestDate
+                        .plusDays(value.toLong())
+                        .format(DateTimeFormatter.ofPattern("MM-dd"))
+                }
+            }
+            chart.notifyDataSetChanged()
+            if (defaultViewportKey != viewportKey) {
+                defaultViewportKey = viewportKey
+                chart.fitScreen()
+                val xRange = lineData.xMax - lineData.xMin
+                if (xRange > defaultVisibleDays) {
+                    chart.zoom(xRange / defaultVisibleDays, 1f, lineData.xMax, 0f)
+                    chart.moveViewToX(lineData.xMax)
+                }
+            }
+            chart.invalidate()
+        }
+    )
+}
 
 @RequiresApi(Build.VERSION_CODES.O)
 @Composable
@@ -2432,7 +2618,8 @@ fun HomeBodyPreview() {
             onEventClick = {},
             onEventSave = {},
             calculateStatistics = { _, _ -> List(11) { 0f } },
-            prepareVPointsChart = { _, _ -> VPointsChartModel(LocalDate.now(), emptyList(), emptyList()) }
+            prepareVPointsChart = { _, _ -> VPointsChartModel(LocalDate.now(), emptyList(), emptyList()) },
+            prepareAcwrChart = { _, _ -> AcwrChartModel(LocalDate.now(), emptyList(), emptyList(), emptyList()) }
         )
     }
 }
@@ -2448,7 +2635,8 @@ fun HomeBodyEmptyListPreview() {
             onEventClick = {},
             onEventSave = {},
             calculateStatistics = { _, _ -> List(11) { 0f } },
-            prepareVPointsChart = { _, _ -> VPointsChartModel(LocalDate.now(), emptyList(), emptyList()) }
+            prepareVPointsChart = { _, _ -> VPointsChartModel(LocalDate.now(), emptyList(), emptyList()) },
+            prepareAcwrChart = { _, _ -> AcwrChartModel(LocalDate.now(), emptyList(), emptyList(), emptyList()) }
         )
     }
 }
