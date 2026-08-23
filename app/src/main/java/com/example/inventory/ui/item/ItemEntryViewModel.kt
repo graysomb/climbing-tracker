@@ -25,6 +25,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.inventory.data.Item
 import com.example.inventory.data.ItemsRepository
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.text.NumberFormat
 import java.time.LocalDateTime
@@ -49,30 +50,21 @@ class ItemEntryViewModel(private val itemsRepository: ItemsRepository) : ViewMod
 
     fun fetchLastItem() {
         viewModelScope.launch {
-            itemsRepository.getLastItemStream().collect { item ->
-                if (item != null) { // Add null check
-                    // Update itemUiState with the last item's details
-                    var lastItemDetails = item.toItemDetails()
-                    var currentItemDetails = itemUiState.itemDetails
-                    var comboItemDetails = ItemDetails(
-                        id = currentItemDetails.id,
-                        name = currentItemDetails.name,
-                        price = lastItemDetails.price,
-                        quantity = lastItemDetails.quantity,
-                        type = lastItemDetails.type,
-                        weight = lastItemDetails.weight,
-                        outside = lastItemDetails.outside,
-                        effort = lastItemDetails.effort,
-                        pain = lastItemDetails.pain,
-                        fear = lastItemDetails.fear
-                    )
-                    itemUiState = ItemUiState(comboItemDetails, isEntryValid = true, isEdit = false)
-                } else {
-                    // Handle the case where item is null, e.g., show an error message or use default values
-                    // For example:
-                    // itemUiState = ItemUiState(ItemDetails(), isEntryValid = false, isEdit = false)
-                }
-            }
+            val lastItemDetails = itemsRepository.getLastItemStream().first().toItemDetails()
+            val currentItemDetails = itemUiState.itemDetails
+            val combinedItemDetails = ItemDetails(
+                id = currentItemDetails.id,
+                name = currentItemDetails.name,
+                price = lastItemDetails.price,
+                quantity = lastItemDetails.quantity,
+                type = lastItemDetails.type,
+                weight = lastItemDetails.weight,
+                outside = lastItemDetails.outside,
+                effort = lastItemDetails.effort,
+                pain = lastItemDetails.pain,
+                fear = lastItemDetails.fear
+            )
+            itemUiState = ItemUiState(combinedItemDetails, isEntryValid = true, isEdit = false)
         }
     }
     fun updateUiState(itemDetails: ItemDetails) {

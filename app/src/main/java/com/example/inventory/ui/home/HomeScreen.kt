@@ -62,6 +62,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -147,16 +148,11 @@ fun HomeScreen(
     viewModel: HomeViewModel = viewModel(factory = AppViewModelProvider.Factory)
 ) {
     val homeUiState by viewModel.homeUiState.collectAsState()
-    val currentTime by viewModel.currentTime.collectAsState()
 
     Scaffold(
         modifier = modifier,
         topBar = {
-            InventoryTopAppBar(
-                title = TimeDifference.getFormattedDuration(currentTime, homeUiState.lastItem.name) ,
-                //title = currentTime,
-                canNavigateBack = false
-            )
+            HomeTopBar(lastItemTime = homeUiState.lastItem.name, viewModel = viewModel)
         },
         floatingActionButton = {
             Column(
@@ -195,11 +191,23 @@ fun HomeScreen(
             onItemClick = navigateToItemUpdate,
             onEventClick = navigateToEventDetails,
             onEventSave = viewModel::addEvent,
+            calculateStatistics = viewModel::getHomeCalculations,
+            prepareVPointsChart = viewModel::getVPointsChartModel,
             modifier = modifier
                 .padding(innerPadding)
                 .fillMaxSize()
         )
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun HomeTopBar(lastItemTime: String, viewModel: HomeViewModel) {
+    val currentTime by viewModel.currentTime.collectAsState()
+    InventoryTopAppBar(
+        title = TimeDifference.getFormattedDuration(currentTime, lastItemTime),
+        canNavigateBack = false
+    )
 }
 
 
@@ -211,6 +219,8 @@ private fun HomeBody(
     onItemClick: (Int) -> Unit,
     onEventClick: (Int) -> Unit,
     onEventSave: (Event) -> Unit,
+    calculateStatistics: suspend (List<Item>, Int) -> List<Float>,
+    prepareVPointsChart: suspend (List<Item>, Boolean) -> VPointsChartModel,
     modifier: Modifier = Modifier
 ) {
     var plotByWeek by remember { mutableStateOf(false) }
@@ -221,12 +231,28 @@ private fun HomeBody(
     var gradeProgressionIsCalculating by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
     val pagerState = rememberPagerState()
-    val filteredItems = when (locationFilter) {
-        1 -> itemList.filter { it.outside == 0 }
-        2 -> itemList.filter { it.outside == 1 }
-        else -> itemList
+    val filteredItems = remember(itemList, locationFilter) {
+        when (locationFilter) {
+            1 -> itemList.filter { it.outside == 0 }
+            2 -> itemList.filter { it.outside == 1 }
+            else -> itemList
+        }
     }
-    val filteredCalcs = calculateHomeCalcs(filteredItems, baselineMonths)
+    val calculatedCalcs by produceState<List<Float>?>(
+        initialValue = null,
+        filteredItems,
+        baselineMonths
+    ) {
+        value = calculateStatistics(filteredItems, baselineMonths)
+    }
+    val filteredCalcs = calculatedCalcs ?: List(11) { 0f }
+    val preparedVPointsChart by produceState<VPointsChartModel?>(
+        initialValue = null,
+        filteredItems,
+        plotByWeek
+    ) {
+        value = prepareVPointsChart(filteredItems, plotByWeek)
+    }
     val locationFilterText = when (locationFilter) {
         1 -> "Inside"
         2 -> "Outside"
@@ -374,7 +400,15 @@ private fun HomeBody(
             ) { page ->
                 when (page) {
                     0 -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        ItemBarChart(filteredItems, Modifier.height(280.dp), plotByWeek, baselineMonths = baselineMonths)
+                        preparedVPointsChart?.let { chartModel ->
+                            ItemBarChart(
+                                filteredItems,
+                                Modifier.height(280.dp),
+                                plotByWeek,
+                                baselineMonths = baselineMonths,
+                                preparedData = chartModel
+                            )
+                        } ?: Spacer(Modifier.height(280.dp))
                         Row(){
                             Text(" Sends/Day: " + ((filteredCalcs[1]*10f).toInt().toFloat()/10f).toString())
                             Text(" Trys/Day: "+((filteredCalcs[0]*10).toInt().toFloat()/10f).toString())
@@ -426,13 +460,16 @@ private fun HomeBody(
                             }
                         }
                         item {
-                            ItemBarChart(
-                                filteredItems,
-                                Modifier.height(280.dp),
-                                plotByWeek,
-                                showLoadOverlay = true,
-                                baselineMonths = baselineMonths
-                            )
+                            preparedVPointsChart?.let { chartModel ->
+                                ItemBarChart(
+                                    filteredItems,
+                                    Modifier.height(280.dp),
+                                    plotByWeek,
+                                    showLoadOverlay = true,
+                                    baselineMonths = baselineMonths,
+                                    preparedData = chartModel
+                                )
+                            } ?: Spacer(Modifier.height(280.dp))
                         }
                         item {
                             VPointsMovingAverageChart(filteredItems, Modifier.height(280.dp))
@@ -705,7 +742,7 @@ private fun EventListItem(event: Event, modifier: Modifier = Modifier) {
 }
 
 
-private fun calculateHomeCalcs(itemList: List<Item>, baselineMonths: Int): List<Float> {
+internal fun calculateHomeCalcs(itemList: List<Item>, baselineMonths: Int): List<Float> {
     val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
     val currentDate = LocalDate.now()
     val injuryTotalVPointsAcwrMean = 0.5084f
@@ -914,55 +951,44 @@ private fun rollingLoadEntries(
 ): List<Entry> {
     val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
     val baselineMonthCount = baselineMonths.coerceAtLeast(1).toLong()
-    val climbItems = itemList
+    val dailyLoadByDate = itemList
+        .asSequence()
         .filter { it.type == 0 }
-        .sortedBy { LocalDateTime.parse(it.name, formatter).toLocalDate() }
-
-    data class DailyLoad(val date: LocalDate, val sendsLoad: Float, val triesLoad: Float)
-
-    val dailyLoads = climbItems
         .groupBy { LocalDateTime.parse(it.name, formatter).toLocalDate() }
-        .map { (date, itemsForDay) ->
-            val sendsLoad = itemsForDay.filter { it.quantity > 0 }.sumOf { it.price.toInt() }.toFloat()
-            val triesLoad = sendsLoad + itemsForDay.filter { it.quantity == 0 }.sumOf { it.price.toInt() }.toFloat()
-            DailyLoad(date, sendsLoad, triesLoad)
-        }
-        .sortedBy { it.date }
+        .mapValues { (_, itemsForDay) -> itemsForDay.sumOf { it.price }.toFloat() }
 
     fun loadComponent(currentLoad: Float, baselineLoad: Float): Float {
         return if (baselineLoad > 0f) currentLoad / baselineLoad else 0f
     }
 
-    val dailyLoadByDate = dailyLoads.associateBy { it.date }
-    val latestDate = dailyLoads.maxOfOrNull { it.date } ?: return emptyList()
+    val latestDate = dailyLoadByDate.keys.maxOrNull() ?: return emptyList()
+    val dayCount = ChronoUnit.DAYS.between(earliestDate, latestDate).toInt() + 1
+    val prefixLoads = FloatArray(dayCount + 1)
+    for (dayIndex in 0 until dayCount) {
+        prefixLoads[dayIndex + 1] =
+            prefixLoads[dayIndex] + (dailyLoadByDate[earliestDate.plusDays(dayIndex.toLong())] ?: 0f)
+    }
 
-    return generateSequence(earliestDate) { date ->
-        val nextDate = date.plusDays(1)
-        if (!nextDate.isAfter(latestDate)) nextDate else null
-    }.mapNotNull { endDate ->
-        val windowStart = endDate.minusDays(6)
-        val baselineStart = windowStart.minusMonths(baselineMonthCount)
-        val effectiveBaselineStart = if (baselineStart.isAfter(earliestDate)) {
-            baselineStart
-        } else {
-            earliestDate
-        }
-        val previousLoads = dailyLoads.filter { load ->
-            !load.date.isBefore(effectiveBaselineStart) && load.date.isBefore(windowStart)
-        }
+    fun dayIndex(date: LocalDate): Int =
+        ChronoUnit.DAYS.between(earliestDate, date).toInt().coerceIn(0, dayCount)
+
+    fun loadBetween(startInclusive: LocalDate, endExclusive: LocalDate): Float {
+        val startIndex = dayIndex(startInclusive)
+        val endIndex = dayIndex(endExclusive)
+        return prefixLoads[endIndex] - prefixLoads[startIndex]
+    }
+
+    return (0 until dayCount).mapNotNull { endIndex ->
+        val endDate = earliestDate.plusDays(endIndex.toLong())
+        val windowStart = endDate.minusDays(6).let { if (it.isAfter(earliestDate)) it else earliestDate }
+        val requestedBaselineStart = windowStart.minusMonths(baselineMonthCount)
+        val effectiveBaselineStart =
+            if (requestedBaselineStart.isAfter(earliestDate)) requestedBaselineStart else earliestDate
         val previousDayCount = ChronoUnit.DAYS.between(effectiveBaselineStart, windowStart).toFloat()
         val previousTriesPerDay = if (previousDayCount > 0f) {
-            previousLoads.sumOf { it.triesLoad.toDouble() }.toFloat() / previousDayCount
-        } else {
-            0f
-        }
-        val windowDates = generateSequence(windowStart) { date ->
-            val nextDate = date.plusDays(1)
-            if (!nextDate.isAfter(endDate)) nextDate else null
-        }.toList()
-        val windowTriesLoad = windowDates.sumOf { date ->
-            (dailyLoadByDate[date]?.triesLoad ?: 0f).toDouble()
-        }.toFloat()
+            loadBetween(effectiveBaselineStart, windowStart) / previousDayCount
+        } else 0f
+        val windowTriesLoad = loadBetween(windowStart, endDate.plusDays(1))
         val rollingLoadPercent = loadComponent(windowTriesLoad, previousTriesPerDay * 7f) * 100f
 
         if (previousTriesPerDay > 0f) {
@@ -1496,25 +1522,24 @@ fun VPointsMovingAverageChart(itemList: List<Item>, modifier: Modifier = Modifie
                 itemsForDay.sumOf { it.price.toInt() }.toFloat()
             }
     }
+    val dayCount = ChronoUnit.DAYS.between(earliestDate, latestDate).toInt() + 1
+    val prefixVPoints = remember(dailyVPoints, earliestDate, latestDate) {
+        FloatArray(dayCount + 1).also { prefix ->
+            for (dayIndex in 0 until dayCount) {
+                val date = earliestDate.plusDays(dayIndex.toLong())
+                prefix[dayIndex + 1] = prefix[dayIndex] + (dailyVPoints[date] ?: 0f)
+            }
+        }
+    }
 
     fun movingAverageEntries(windowDays: Long): List<Entry> {
-        return generateSequence(earliestDate) { date ->
-            val nextDate = date.plusDays(1)
-            if (!nextDate.isAfter(latestDate)) nextDate else null
-        }.map { endDate ->
-            val rawWindowStart = endDate.minusDays(windowDays - 1)
-            val windowStart = if (rawWindowStart.isAfter(earliestDate)) rawWindowStart else earliestDate
-            val daysInWindow = ChronoUnit.DAYS.between(windowStart, endDate).toFloat() + 1f
-            val windowDates = generateSequence(windowStart) { date ->
-                val nextDate = date.plusDays(1)
-                if (!nextDate.isAfter(endDate)) nextDate else null
-            }.toList()
-            val windowVPoints = windowDates.sumOf { date ->
-                (dailyVPoints[date] ?: 0f).toDouble()
-            }.toFloat()
-            val x = ChronoUnit.DAYS.between(earliestDate, endDate).toFloat()
-            Entry(x, if (daysInWindow > 0f) windowVPoints / daysInWindow else 0f)
-        }.toList()
+        val windowSize = windowDays.toInt()
+        return (0 until dayCount).map { endIndex ->
+            val startIndex = (endIndex - windowSize + 1).coerceAtLeast(0)
+            val daysInWindow = endIndex - startIndex + 1
+            val windowVPoints = prefixVPoints[endIndex + 1] - prefixVPoints[startIndex]
+            Entry(endIndex.toFloat(), windowVPoints / daysInWindow.toFloat())
+        }
     }
 
     val sevenDayEntries = remember(dailyVPoints, earliestDate, latestDate) { movingAverageEntries(7) }
@@ -2150,110 +2175,52 @@ fun ItemBarChart(
     modifier: Modifier = Modifier,
     plotByWeek: Boolean,
     showLoadOverlay: Boolean = false,
-    baselineMonths: Int = 1
+    baselineMonths: Int = 1,
+    preparedData: VPointsChartModel
 ) {
-    val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
-    val currentDate = LocalDate.now()
     var defaultViewportKey by remember { mutableStateOf<String?>(null) }
     val chartKey = "vpoints-${itemList.hashCode()}-$plotByWeek-$showLoadOverlay-$baselineMonths"
-
-    // Filter items based on the desired time range
-    /*val filteredItems = if (plotByWeek) {
-        val oneYearAgo = currentDate.minusYears(1)
-        itemList.filter { item ->
-            val itemDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
-            !itemDate.isBefore(oneYearAgo) && !itemDate.isAfter(currentDate)
-        }
-    } else {
-        val threeMonthsAgo = currentDate.minusMonths(3)
-        itemList.filter { item ->
-            val itemDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
-            !itemDate.isBefore(threeMonthsAgo) && !itemDate.isAfter(currentDate)
-        }
-    }*/
-    val filteredItems = itemList
-
-    val sortedItems = remember(filteredItems) {
-        filteredItems.sortedBy {
-            LocalDateTime.parse(it.name, formatter).toLocalDate()
+    val earliestDate = preparedData.earliestDate
+    val barData = remember(preparedData) {
+        val sentDataSet = BarDataSet(
+            preparedData.sends.map { BarEntry(it.x, it.y) },
+            "Send"
+        ).apply { color = Color.CYAN }
+        val attemptDataSet = BarDataSet(
+            preparedData.attempts.map { BarEntry(it.x, it.y) },
+            "Attempt"
+        ).apply { color = Color.MAGENTA }
+        BarData(attemptDataSet, sentDataSet).apply {
+            isHighlightEnabled = false
+            setDrawValues(false)
         }
     }
-    // Group items by week or day
-    val earliestDate = sortedItems.minOfOrNull { item ->
-        LocalDateTime.parse(item.name, formatter).toLocalDate()
-    } ?: LocalDate.MIN
-
-    val groupedQuantities = remember(sortedItems, earliestDate, plotByWeek) {
-        if (plotByWeek) {
-            sortedItems.groupBy { item ->
-                val localDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
-                val daysSinceEarliest = ChronoUnit.DAYS.between(earliestDate, localDate)
-                val week = (daysSinceEarliest / 7.0f).toInt()
-                week.toFloat()
-
-            }
-        } else {
-            sortedItems.groupBy { item ->
-                val localDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
-                val daysSinceEarliest = ChronoUnit.DAYS.between(earliestDate, localDate)
-                daysSinceEarliest.toFloat()
-            }
-        }
-    }
-
-
-
-    val dailyQuantities = remember(groupedQuantities) {
-        groupedQuantities.mapValues { (_, itemsForPeriod) ->
-            val zeroQuantitySum = itemsForPeriod.filter { it.quantity > 0 }.sumOf { it.price.toInt() }
-            val positiveQuantitySum = itemsForPeriod.filter { it.quantity == 0 }.sumOf { it.price.toInt() }
-            listOf(zeroQuantitySum.toFloat(), zeroQuantitySum.toFloat() + positiveQuantitySum.toFloat())
-        }
-    }
-
-    // Create BarEntry lists for each quantity category
-    val zeroQuantityEntries = dailyQuantities.map { (day, sums) ->
-        BarEntry(day, sums[0])
-    }
-    val positiveQuantityEntries = dailyQuantities.map { (day, sums) ->
-        BarEntry(day, sums[1])
-    }
-
-    // Create BarDataSets with colors
-    val zeroQuantityDataSet = BarDataSet(zeroQuantityEntries, "Send").apply {
-        color = Color.CYAN
-    }
-    val positiveQuantityDataSet = BarDataSet(positiveQuantityEntries, "Attempt").apply {
-        color = Color.MAGENTA
-    }
-    // Create BarData and configure stacking
-    val barData = BarData(positiveQuantityDataSet, zeroQuantityDataSet)
-    barData.isHighlightEnabled = false // Optional: disable highlighting
-    barData.setDrawValues(false)      // Optional: hide values on bars
     val loadEntries = remember(itemList, earliestDate, plotByWeek, baselineMonths, showLoadOverlay) {
         if (showLoadOverlay) rollingLoadEntries(itemList, earliestDate, plotByWeek, baselineMonths) else emptyList()
     }
-    val lineData = if (showLoadOverlay) {
-        val loadPercentDataSet = LineDataSet(
-            loadEntries,
-            "7-day load %"
-        ).apply {
-            color = android.graphics.Color.YELLOW
-            axisDependency = YAxis.AxisDependency.RIGHT
-            setDrawCircles(false)
-            lineWidth = 2f
-            valueTextColor = android.graphics.Color.YELLOW
-            valueTextSize = 10f
+    val lineData = remember(loadEntries, showLoadOverlay) {
+        if (showLoadOverlay) {
+            val loadPercentDataSet = LineDataSet(
+                loadEntries,
+                "7-day load %"
+            ).apply {
+                color = android.graphics.Color.YELLOW
+                axisDependency = YAxis.AxisDependency.RIGHT
+                setDrawCircles(false)
+                lineWidth = 2f
+                valueTextColor = android.graphics.Color.YELLOW
+                valueTextSize = 10f
+            }
+            LineData(loadPercentDataSet).apply { setDrawValues(false) }
+        } else {
+            null
         }
-        LineData(loadPercentDataSet).apply {
-            setDrawValues(false)
-        }
-    } else {
-        null
     }
-    val combinedData = CombinedData().apply {
-        setData(barData)
-        lineData?.let { setData(it) }
+    val combinedData = remember(barData, lineData) {
+        CombinedData().apply {
+            setData(barData)
+            lineData?.let { setData(it) }
+        }
     }
     val viewportKey = "${plotByWeek}-${barData.xMin}-${barData.xMax}"
     val defaultVisibleUnits = if (plotByWeek) 4f else 31f
@@ -2462,7 +2429,9 @@ fun HomeBodyPreview() {
             eventList = listOf(),
             onItemClick = {},
             onEventClick = {},
-            onEventSave = {}
+            onEventSave = {},
+            calculateStatistics = { _, _ -> List(11) { 0f } },
+            prepareVPointsChart = { _, _ -> VPointsChartModel(LocalDate.now(), emptyList(), emptyList()) }
         )
     }
 }
@@ -2476,7 +2445,9 @@ fun HomeBodyEmptyListPreview() {
             eventList = listOf(),
             onItemClick = {},
             onEventClick = {},
-            onEventSave = {}
+            onEventSave = {},
+            calculateStatistics = { _, _ -> List(11) { 0f } },
+            prepareVPointsChart = { _, _ -> VPointsChartModel(LocalDate.now(), emptyList(), emptyList()) }
         )
     }
 }

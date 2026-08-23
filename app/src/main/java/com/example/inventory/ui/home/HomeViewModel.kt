@@ -21,31 +21,29 @@ import androidx.lifecycle.viewModelScope
 import com.example.inventory.data.Event
 import com.example.inventory.data.Item
 import com.example.inventory.data.ItemsRepository
-import com.github.mikephil.charting.data.Entry
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import org.apache.commons.math3.analysis.function.Log
-import java.time.Duration
+import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
-import java.time.temporal.WeekFields
-import java.util.Locale
-import kotlin.math.log
+import java.time.temporal.ChronoUnit
 
 /**
  * ViewModel to retrieve all items in the Room database.
  */
 class HomeViewModel(private val itemsRepository: ItemsRepository) : ViewModel() {
+    private val calculationCache = LinkedHashMap<String, List<Float>>()
+    private val vPointsChartCache = LinkedHashMap<String, VPointsChartModel>()
 
     /**
      * Holds home ui state. The list of items are retrieved from [ItemsRepository] and mapped to
@@ -71,8 +69,7 @@ class HomeViewModel(private val itemsRepository: ItemsRepository) : ViewModel() 
             HomeUiState(
                 itemList = allItems,
                 eventList = allEvents,
-                lastItem = lastItem ?: Item(1, LocalDateTime.now().toString(), 0, 0, 0, 0.0, 0, 5, 0, 0),
-                calcs = performCalculations(allItems)
+                lastItem = lastItem ?: Item(1, LocalDateTime.now().toString(), 0, 0, 0, 0.0, 0, 5, 0, 0)
             )
         }.stateIn(
             scope = viewModelScope,
@@ -86,6 +83,51 @@ class HomeViewModel(private val itemsRepository: ItemsRepository) : ViewModel() 
         }
     }
 
+    suspend fun getHomeCalculations(itemList: List<Item>, baselineMonths: Int): List<Float> =
+        withContext(Dispatchers.Default) {
+            val cacheKey = "${itemList.hashCode()}-${itemList.size}-$baselineMonths"
+            synchronized(calculationCache) { calculationCache[cacheKey] }?.let { return@withContext it }
+
+            val calculated = calculateHomeCalcs(itemList, baselineMonths)
+            synchronized(calculationCache) {
+                if (calculationCache.size >= MAX_CACHE_ENTRIES) calculationCache.clear()
+                calculationCache[cacheKey] = calculated
+            }
+            calculated
+        }
+
+    suspend fun getVPointsChartModel(itemList: List<Item>, plotByWeek: Boolean): VPointsChartModel =
+        withContext(Dispatchers.Default) {
+            val cacheKey = "${itemList.hashCode()}-${itemList.size}-$plotByWeek"
+            synchronized(vPointsChartCache) { vPointsChartCache[cacheKey] }?.let { return@withContext it }
+
+            val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
+            val datedItems = itemList
+                .map { item -> item to LocalDateTime.parse(item.name, formatter).toLocalDate() }
+                .sortedBy { (_, date) -> date }
+            val earliestDate = datedItems.firstOrNull()?.second ?: LocalDate.now()
+            val groupedItems = datedItems.groupBy { (_, date) ->
+                val daysSinceEarliest = ChronoUnit.DAYS.between(earliestDate, date).toFloat()
+                if (plotByWeek) (daysSinceEarliest / 7f).toInt().toFloat() else daysSinceEarliest
+            }
+            val sends = ArrayList<ChartPoint>(groupedItems.size)
+            val attempts = ArrayList<ChartPoint>(groupedItems.size)
+            groupedItems.forEach { (x, entries) ->
+                val itemsForPeriod = entries.map { it.first }
+                val sentVPoints = itemsForPeriod.filter { it.quantity > 0 }.sumOf { it.price }.toFloat()
+                val attemptedVPoints = sentVPoints +
+                    itemsForPeriod.filter { it.quantity == 0 }.sumOf { it.price }.toFloat()
+                sends.add(ChartPoint(x, sentVPoints))
+                attempts.add(ChartPoint(x, attemptedVPoints))
+            }
+            val model = VPointsChartModel(earliestDate, sends, attempts)
+            synchronized(vPointsChartCache) {
+                if (vPointsChartCache.size >= MAX_CACHE_ENTRIES) vPointsChartCache.clear()
+                vPointsChartCache[cacheKey] = model
+            }
+            model
+        }
+
     fun timeTickFlow(): Flow<String> = flow {
         while (true) {
             val currentDateTime = LocalDateTime.now()
@@ -98,121 +140,19 @@ class HomeViewModel(private val itemsRepository: ItemsRepository) : ViewModel() 
             delay(1000) // Update every second
         }
     }
-    private fun performCalculations(itemList: List<Item>): List<Float> {
-
-        val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
-        val currentDate = LocalDate.now()
-        val oneMonthsAgo = currentDate.minusMonths(3)
-
-        val filteredItems = itemList.filter { item ->
-            val itemDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
-            !itemDate.isBefore(oneMonthsAgo) && !itemDate.isAfter(currentDate)
-        }
-
-        //val filteredItems = itemList
-
-        // Group items by week or day
-        val groupedQuantities = filteredItems.groupBy { item ->
-            LocalDateTime.parse(item.name, formatter).dayOfYear.toFloat()
-        }
-
-
-        val dailyQuantities = groupedQuantities.mapValues { (_, itemsForPeriod) ->
-            val zeroQuantitySum = itemsForPeriod.filter { it.quantity > 0 }.sumOf { it.price.toInt() }
-            val positiveQuantitySum = itemsForPeriod.filter { it.quantity == 0 }.sumOf { it.price.toInt() }
-            listOf(zeroQuantitySum.toFloat(),zeroQuantitySum.toFloat()+ positiveQuantitySum.toFloat()) // maybe add a multiplier for no sends
-        }
-
-        val sends = dailyQuantities.values.map { it[0] }
-        val trys = dailyQuantities.values.map { it[1] }
-        val trysF = trys.filter { it != 0f }
-        val sendsF = sends.filter { it != 0f }
-        val sendsPerDay = if (sendsF.isNotEmpty()) sendsF.average().toFloat() else 0f
-        val triesPerDay = if (trysF.isNotEmpty()) trysF.average().toFloat() else 0f
-
-        fun loadingComponent(currentLoad: Float, baselineLoad: Float): Float {
-            return if (baselineLoad > 0f) currentLoad / baselineLoad else 0f
-        }
-
-        fun loadForItems(items: List<Item>): List<Float> {
-            val sendsLoad = items.filter { it.quantity > 0 }.sumOf { it.price.toInt() }.toFloat()
-            val triesLoad = sendsLoad + items.filter { it.quantity == 0 }.sumOf { it.price.toInt() }.toFloat()
-            return listOf(sendsLoad, triesLoad)
-        }
-
-        val todayItems = filteredItems.filter { item ->
-            LocalDateTime.parse(item.name, formatter).toLocalDate() == currentDate
-        }
-        val lastSevenDays = currentDate.minusDays(6)
-        val lastSevenDayItems = filteredItems.filter { item ->
-            val itemDate = LocalDateTime.parse(item.name, formatter).toLocalDate()
-            !itemDate.isBefore(lastSevenDays) && !itemDate.isAfter(currentDate)
-        }
-        val todayLoad = loadForItems(todayItems)
-        val weekLoad = loadForItems(lastSevenDayItems)
-        val loadingThisDay = (
-            loadingComponent(todayLoad[0], sendsPerDay) +
-                loadingComponent(todayLoad[1], triesPerDay)
-            ) * 0.5f * 100f
-        val loadingThisWeek = (
-            loadingComponent(weekLoad[0], sendsPerDay * 7f) +
-                loadingComponent(weekLoad[1], triesPerDay * 7f)
-            ) * 0.5f * 100f
-
-        val groupedByPrice = filteredItems.groupBy { it.price }
-
-        val priceFractions = groupedByPrice.mapValues { (_, items) ->
-            val sends = items.count { it.quantity > 0 }
-            val sendsV = items.filter{ it.quantity > 0 }.sumOf{it.price.toInt()}
-            val attempts = items.count { it.quantity <= 0 }
-            if (sends + attempts > 0) sends.toFloat() / (sends + attempts) else 0f
-            }
-
-        // Fit the data to c / (exp((x - a) / b) + 1) using least squares
-        val xValues = priceFractions.keys.map { it.toFloat() }
-        val yValues = priceFractions.values.toList()
-        val fitEntries = mutableListOf<Entry>()
-
-         val paramsFit = if (xValues.isNotEmpty() && yValues.isNotEmpty() ) {
-            val initialA = xValues.average().toFloat()
-            val initialB = (xValues.maxOrNull()!! - xValues.minOrNull()!!) / 8
-            val initialC = yValues.maxOrNull() ?: 1f
-
-            // Convert Kotlin collections to Java arrays
-            val xValuesJava = xValues.map { it.toDouble() }.toDoubleArray()
-            val yValuesJava = yValues.map { it.toDouble() }.toDoubleArray()
-
-            // Perform least squares fitting using the Java class LogisticFitter
-            val parameters = LogisticFitter.fitLogistic(xValuesJava, yValuesJava)
-            parameters.toList()
-            } else {
-                listOf(0f, 0f, 0f)
-         }
-        val a = paramsFit[0].toFloat()
-        val b  = paramsFit[1].toFloat()
-        val c = paramsFit[2].toFloat()
-        val send50 = (b*c - log((-1 + 2*a).toDouble(), Math.exp(1.0).toDouble()))/b
-        val p3 = 0.206299
-        val send3try = (b*c - log(((a-p3)/p3).toDouble(), Math.exp(1.0).toDouble()))/b
-        val p6 = 0.109101
-        val p12 = 0.0561257
-        val send6try = (b*c - log(((a-p12)/p12).toDouble(), Math.exp(1.0).toDouble()))/b
-
-        return listOf(
-            triesPerDay,
-            sendsPerDay,
-            send50.toFloat(),
-            send3try.toFloat(),
-            send6try.toFloat(),
-            loadingThisDay,
-            loadingThisWeek
-        )
-    }
-
     companion object {
         private const val TIMEOUT_MILLIS = 5_000L
+        private const val MAX_CACHE_ENTRIES = 24
     }
 }
+
+data class ChartPoint(val x: Float, val y: Float)
+
+data class VPointsChartModel(
+    val earliestDate: LocalDate,
+    val sends: List<ChartPoint>,
+    val attempts: List<ChartPoint>
+)
 
 /**
  * Ui State for HomeScreen
@@ -220,6 +160,5 @@ class HomeViewModel(private val itemsRepository: ItemsRepository) : ViewModel() 
 data class HomeUiState(
     val itemList: List<Item> = listOf(),
     val eventList: List<Event> = listOf(),
-    val lastItem: Item,
-    val calcs: List<Float> = listOf()
+    val lastItem: Item
 )
