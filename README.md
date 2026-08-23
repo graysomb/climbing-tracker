@@ -1,3 +1,8 @@
+# WARNING: AI SLOP
+
+**This README is fully AI-generated right now. The app and models are about 60%
+AI-generated.**
+
 # Climbs
 
 Climbs is an Android training log for recording individual climbing attempts,
