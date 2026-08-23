@@ -4,6 +4,10 @@
 # Mac files
 .DS_Store
 
+# Python caches
+__pycache__/
+*.py[cod]
+
 # files for the dex VM
 *.dex
 

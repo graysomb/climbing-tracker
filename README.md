@@ -1,6 +1,6 @@
 
 
-Basic idea is to record failures and sucesses when climbing. Plus a handy timer between attempts!
+Basic idea is to record failures and sucesses when climbing. Plus a handy timer between attempts! Also a FREE 3 year long climbing data set from yours truly.
 
 **Side Quests:**
 
@@ -32,9 +32,9 @@ The core idea is simple: **record every genuine attempt**, whether it succeeds o
 fails. Consistent recording makes the send-rate, grade, and workload trends much
 more meaningful.
 
-[Download the full PDF user guide](output/pdf/climbs_user_guide.pdf)
+[Download the full PDF user guide](docs/climbs_user_guide.pdf)
 
-[Read the climbing model results summary](output/pdf/climbing_model_results_summary.pdf)
+[Read the climbing model results summary](analysis/outputs/reports/climbing_model_results_summary.pdf)
 
 [Download the Android APK](app-debug.apk?raw=1)
 
@@ -47,6 +47,7 @@ more meaningful.
 - [Navigating the app](#navigating-the-app)
 - [Metrics](#metrics)
 - [Model results and methodology](#model-results-and-methodology)
+- [Python analysis](#python-analysis)
 - [Charts](#charts)
 - [Events](#events)
 - [Export and backup](#export-and-backup)
@@ -59,12 +60,12 @@ more meaningful.
 The modeling results below summarize this recorded dataset. They are useful for
 describing patterns and generating training questions, but they do not establish
 causation or guarantee that the same relationships apply to another climber.
-See the [Climbing Model Results Summary](output/pdf/climbing_model_results_summary.pdf)
+See the [Climbing Model Results Summary](analysis/outputs/reports/climbing_model_results_summary.pdf)
 for the complete analysis, statistical tests, and limitations.
 
 ### Send probability by grade and venue
 
-![Send probability by grade for inside and outside climbing](model2_plot_outputs/01_send_probability_by_grade.png)
+![Send probability by grade for inside and outside climbing](analysis/outputs/plots/model2/01_send_probability_by_grade.png)
 
 *Observed send fractions with fitted logistic send-probability curves. Error
 bars show uncertainty in the observed grade-level proportions.*
@@ -78,7 +79,7 @@ bars show uncertainty in the observed grade-level proportions.*
 
 ### Rest after a failed attempt
 
-![Send probability versus rest time after a failed attempt](model2_plot_outputs/26_after_a_fail_does_longer_rest_predict_sends_intervals_400_min.png)
+![Send probability versus rest time after a failed attempt](analysis/outputs/plots/model2/26_after_a_fail_does_longer_rest_predict_sends_intervals_400_min.png)
 
 *Observed probability that the next attempt is a send after a failure, grouped
 by elapsed time. The horizontal axis is logarithmic; error bars widen where
@@ -95,7 +96,7 @@ there are fewer observations.*
 
 ### ACWR and recorded injury prediction
 
-![Estimated injury probability from total and average V-point ACWR](model3_plot_outputs/36_estimated_injury_probability_from_v_point_acwr.png)
+![Estimated injury probability from total and average V-point ACWR](analysis/outputs/plots/model3/36_estimated_injury_probability_from_v_point_acwr.png)
 
 *Logistic estimates for recorded injury dates using the maximum Total or Mean
 V-point ACWR during the prior seven days. The analysis contains 738 evaluated
@@ -367,7 +368,7 @@ respectively.
 
 ## Model results and methodology
 
-The 15-page [Climbing Model Results Summary](output/pdf/climbing_model_results_summary.pdf)
+The 15-page [Climbing Model Results Summary](analysis/outputs/reports/climbing_model_results_summary.pdf)
 documents the statistical models behind the broader analysis of:
 
 - Send probability by grade and venue
@@ -380,6 +381,12 @@ documents the statistical models behind the broader analysis of:
 It also explains surprise sends, surprise failures, signed performance, model
 limitations, and the distinction between association and prediction. The report
 is included as an appendix in the full PDF user guide as well.
+
+## Python analysis
+
+The statistical models, exported climbing data, generated plots, and analysis
+documentation are kept under [`analysis/`](analysis/README.md), separate from
+the Android project. See that directory for model descriptions and run commands.
 
 ## Charts
 

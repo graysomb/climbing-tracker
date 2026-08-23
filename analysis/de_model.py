@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import matplotlib
+from pathlib import Path
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -17,8 +18,10 @@ from sklearn.model_selection import TimeSeriesSplit
 # SETTINGS
 # ============================================================
 
-csv_path = "climb_data (4).csv"
-plot_output_dir = "de_model_plot_outputs"
+analysis_dir = Path(__file__).resolve().parent
+csv_path = analysis_dir / "data" / "climb_data.csv"
+derived_data_dir = analysis_dir / "data" / "derived"
+plot_output_dir = analysis_dir / "outputs" / "plots" / "de_model"
 
 plt.rcParams["figure.max_open_warning"] = 0
 
@@ -346,17 +349,18 @@ daily_perf = daily_perf.sort_values("date")
 # SAVE OUTPUTS
 # ============================================================
 
-results_df.to_csv("tau_grid_search_results.csv", index=False)
-model_df.to_csv("attempt_level_send_model.csv", index=False)
-daily_perf.to_csv("daily_performance_readiness.csv", index=False)
-best_states.to_csv("daily_readiness_state.csv")
+derived_data_dir.mkdir(parents=True, exist_ok=True)
+results_df.to_csv(derived_data_dir / "tau_grid_search_results.csv", index=False)
+model_df.to_csv(derived_data_dir / "attempt_level_send_model.csv", index=False)
+daily_perf.to_csv(derived_data_dir / "daily_performance_readiness.csv", index=False)
+best_states.to_csv(derived_data_dir / "daily_readiness_state.csv")
 
 print()
 print("Saved:")
-print("  tau_grid_search_results.csv")
-print("  attempt_level_send_model.csv")
-print("  daily_performance_readiness.csv")
-print("  daily_readiness_state.csv")
+print(f"  {derived_data_dir / 'tau_grid_search_results.csv'}")
+print(f"  {derived_data_dir / 'attempt_level_send_model.csv'}")
+print(f"  {derived_data_dir / 'daily_performance_readiness.csv'}")
+print(f"  {derived_data_dir / 'daily_readiness_state.csv'}")
 
 
 # ============================================================

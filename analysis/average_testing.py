@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import matplotlib
+from pathlib import Path
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -17,8 +18,10 @@ from sklearn.metrics import classification_report, roc_auc_score
 # SETTINGS
 # ============================================================
 
-csv_path = "climb_data (4).csv"
-plot_output_dir = "average_testing_plot_outputs"
+analysis_dir = Path(__file__).resolve().parent
+csv_path = analysis_dir / "data" / "climb_data.csv"
+derived_data_dir = analysis_dir / "data" / "derived"
+plot_output_dir = analysis_dir / "outputs" / "plots" / "average_testing"
 
 plt.rcParams["figure.max_open_warning"] = 0
 
@@ -293,17 +296,18 @@ else:
 # SAVE OUTPUT
 # ============================================================
 
-daily.to_csv("climbing_daily_load_analysis.csv")
-weekly.to_csv("climbing_weekly_injury_analysis.csv")
+derived_data_dir.mkdir(parents=True, exist_ok=True)
+daily.to_csv(derived_data_dir / "climbing_daily_load_analysis.csv")
+weekly.to_csv(derived_data_dir / "climbing_weekly_injury_analysis.csv")
 
 if len(model_df) > 0:
-    model_df.to_csv("climbing_injury_model_data.csv", index=False)
+    model_df.to_csv(derived_data_dir / "climbing_injury_model_data.csv", index=False)
 
 print()
 print("Saved:")
-print("  climbing_daily_load_analysis.csv")
-print("  climbing_weekly_injury_analysis.csv")
-print("  climbing_injury_model_data.csv")
+print(f"  {derived_data_dir / 'climbing_daily_load_analysis.csv'}")
+print(f"  {derived_data_dir / 'climbing_weekly_injury_analysis.csv'}")
+print(f"  {derived_data_dir / 'climbing_injury_model_data.csv'}")
 
 
 # ============================================================

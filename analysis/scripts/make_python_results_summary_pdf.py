@@ -22,7 +22,9 @@ from reportlab.platypus import (
 
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT_DIR = ROOT / "output" / "pdf"
+PLOTS_DIR = ROOT / "outputs" / "plots"
+WORK_DIR = ROOT / "outputs" / "report_working"
+OUT_DIR = ROOT / "outputs" / "reports"
 OUT_PDF = OUT_DIR / "climbing_model_results_summary.pdf"
 
 
@@ -133,7 +135,9 @@ def bullets(items, style="BodyText"):
 
 
 def image_block(rel_path, caption, max_width=6.7 * inch, max_height=3.5 * inch):
-    path = ROOT / rel_path
+    path = Path(rel_path)
+    if not path.is_absolute():
+        path = PLOTS_DIR / path
     if not path.exists():
         return [para(f"Missing expected figure: {rel_path}", "Small")]
 
@@ -145,12 +149,12 @@ def image_block(rel_path, caption, max_width=6.7 * inch, max_height=3.5 * inch):
 
 
 def crop_figure(rel_path, output_name, box):
-    source = ROOT / rel_path
-    output = ROOT / "tmp" / "pdfs" / "report_assets" / output_name
+    source = PLOTS_DIR / rel_path
+    output = WORK_DIR / "report_assets" / output_name
     output.parent.mkdir(parents=True, exist_ok=True)
     with PILImage.open(source) as img:
         img.crop(box).save(output)
-    return output.relative_to(ROOT)
+    return output
 
 
 def table(data, col_widths=None):
@@ -201,12 +205,12 @@ def add_page_number(canvas, doc):
 def build():
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     failure_volume_panel = crop_figure(
-        "model4_fail_plot_outputs/01_does_prior_month_volume_load_predict_daily_surprise_fail.png",
+        "model4_fail/01_does_prior_month_volume_load_predict_daily_surprise_fail.png",
         "failure_attempted_vgrade_total.png",
         (50, 35, 1000, 800),
     )
     send_duration_panel = crop_figure(
-        "model4_send_plot_outputs/01_does_prior_month_volume_load_predict_daily_surprise_send.png",
+        "model4_send/01_does_prior_month_volume_load_predict_daily_surprise_send.png",
         "send_average_session_duration.png",
         (50, 1580, 1000, 2350),
     )
@@ -258,65 +262,65 @@ def build():
     story.append(PageBreak())
     story.append(para("Evidence 1: Send Probability By Grade And Venue", "Heading1"))
     story.append(para("Both model2.py and model3.py fit separate logistic curves for inside and outside attempts. Send probability declines as grade rises, and the indoor curve is shifted roughly one V-grade to the right. In practical terms, an indoor grade has a higher fitted send probability than the same nominal outdoor grade in this dataset.", "BodyText"))
-    story.append(image_block("model3_plot_outputs/01_send_probability_by_grade.png", "Figure 1. Fitted send probability by V-grade for inside and outside climbing. Model 2 and Model 3 export the same figure; their PNG outputs are byte-for-byte identical.", max_height=5.2 * inch))
+    story.append(image_block("model3/01_send_probability_by_grade.png", "Figure 1. Fitted send probability by V-grade for inside and outside climbing. Model 2 and Model 3 export the same figure; their PNG outputs are byte-for-byte identical.", max_height=5.2 * inch))
     story.append(para("This venue-specific fit is the prior behind surprise_send, surprise_fail, performance, and information-load calculations. It prevents the later models from treating an indoor and outdoor attempt at the same nominal grade as equally difficult.", "Small"))
 
     story.append(PageBreak())
     story.append(para("Model 2 Evidence: Session Progression And Pacing", "Heading1"))
     story.append(para("The venue split extends beyond grade difficulty. Model 2's sequential-posterior surprisal generally rises over normalized indoor session time and falls outdoors. Because surprisal is unsigned, this plot describes predictability rather than good-minus-bad performance directly; its venue direction is consistent with the signed-performance session analysis.", "BodyText"))
-    story.append(image_block("model2_plot_outputs/17_sequentially_updated_surprise_vs_duration_normalized_session_time.png", "Figure M2-1. Sequentially updated posterior surprisal across duration-normalized session time. Indoor surprisal rises while outdoor surprisal generally falls.", max_height=3.1 * inch))
+    story.append(image_block("model2/17_sequentially_updated_surprise_vs_duration_normalized_session_time.png", "Figure M2-1. Sequentially updated posterior surprisal across duration-normalized session time. Indoor surprisal rises while outdoor surprisal generally falls.", max_height=3.1 * inch))
     story.append(para("Attempt pacing also differs strongly by venue. Indoor attempts cluster at shorter intervals, while the main outdoor distribution is shifted toward longer waits. The distant peaks reflect breaks between sessions or climbing days rather than ordinary between-try rest.", "BodyText"))
-    story.append(image_block("model2_plot_outputs/22_intervals_between_consecutive_attempts_split_by_inside_outside.png", "Figure M2-2. Consecutive-attempt intervals on a log scale. The outdoor distribution is shifted to the right of the indoor distribution.", max_height=3.05 * inch))
+    story.append(image_block("model2/22_intervals_between_consecutive_attempts_split_by_inside_outside.png", "Figure M2-2. Consecutive-attempt intervals on a log scale. The outdoor distribution is shifted to the right of the indoor distribution.", max_height=3.05 * inch))
 
     story.append(PageBreak())
     story.append(para("Model 2 Evidence: Rest After A Failure", "Heading1"))
     story.append(para("For attempts immediately following a failure, there is no clear monotonic benefit from waiting longer within the short-rest region. In particular, waits below approximately 10-11 minutes do not show increasing send probability. The wider error bars in sparse bins make this a pattern-level conclusion rather than a precise optimal-rest estimate.", "BodyText"))
-    story.append(image_block("model2_plot_outputs/26_after_a_fail_does_longer_rest_predict_sends_intervals_400_min.png", "Figure M2-3. Next-attempt send probability after a failure versus rest interval. The dashed lines mark 10 minutes and one hour.", max_height=5.2 * inch))
+    story.append(image_block("model2/26_after_a_fail_does_longer_rest_predict_sends_intervals_400_min.png", "Figure M2-3. Next-attempt send probability after a failure versus rest interval. The dashed lines mark 10 minutes and one hour.", max_height=5.2 * inch))
 
     story.append(PageBreak())
     story.append(para("Model 2 Evidence: Attempts Until The Next Send", "Heading1"))
     story.append(para("Most completed send-to-send cycles contain very few attempts, and long cycles become progressively rarer. The grade-controlled distribution shows the same basic decline, so the result is not explained only by easier grades being sent more often.", "BodyText"))
-    story.append(image_block("model2_plot_outputs/29_attempts_until_next_send.png", "Figure M2-4. Raw count distribution of logged attempts until the next send, shown on log-log axes.", max_height=2.8 * inch))
-    story.append(image_block("model2_plot_outputs/31_attempts_until_next_send_controlling_for_grade_equal_weight_average_over_target_.png", "Figure M2-5. Grade-controlled probability of the next send occurring after a given number of attempts. The probability falls sharply after the first attempt.", max_height=3.25 * inch))
+    story.append(image_block("model2/29_attempts_until_next_send.png", "Figure M2-4. Raw count distribution of logged attempts until the next send, shown on log-log axes.", max_height=2.8 * inch))
+    story.append(image_block("model2/31_attempts_until_next_send_controlling_for_grade_equal_weight_average_over_target_.png", "Figure M2-5. Grade-controlled probability of the next send occurring after a given number of attempts. The probability falls sharply after the first attempt.", max_height=3.25 * inch))
 
     story.append(PageBreak())
     story.append(para("Attempts By Venue And Grade", "Heading2"))
     story.append(para("Splitting the cycles by venue and target grade shows that the decline is visually clearest for indoor climbing and lower grades. This figure is descriptive: it does not provide a formal interaction-test p-value, and later-attempt points can be based on fewer completed cycles.", "BodyText"))
-    story.append(image_block("model2_plot_outputs/33_inside_attempts_until_next_send_by_target_grade.png", "Figure M2-6. Attempts until the next send, split by inside/outside venue and target send grade. First-attempt probability is highest across most grade curves.", max_height=4.6 * inch))
+    story.append(image_block("model2/33_inside_attempts_until_next_send_by_target_grade.png", "Figure M2-6. Attempts until the next send, split by inside/outside venue and target send grade. First-attempt probability is highest across most grade curves.", max_height=4.6 * inch))
     story.append(para("The code labels a cycle as a flash when the next send occurs on the first logged attempt after the previous send (trials_to_send == 1). Under that operational definition, flash probability is high at lower grades and declines substantially at the highest grades.", "BodyText"))
-    story.append(image_block("model2_plot_outputs/34_flash_probability_by_grade.png", "Figure M2-7. Flash probability by target send grade, using Model 2's send-to-send-cycle definition.", max_height=2.6 * inch))
+    story.append(image_block("model2/34_flash_probability_by_grade.png", "Figure M2-7. Flash probability by target send grade, using Model 2's send-to-send-cycle definition.", max_height=2.6 * inch))
 
     story.append(PageBreak())
     story.append(para("Evidence 2: Performance Predicts Performance", "Heading1"))
     story.append(para("The momentum tests are statistically significant but modest: past-28-day performance explains 3.1% of next-day variance and 7.6% of next-week variance. The multivariable model confirms that previous performance is the largest standardized daily coefficient; weekly attempted V-grade volume also contributes.", "BodyText"))
-    story.append(image_block("model4_plot_outputs/03_performance_momentum_tests.png", "Figure 2. Past-28-day performance versus next-day and next-week performance. Both slopes are positive (p=0.00471 and p=0.00611), but R2 remains low.", max_height=3.25 * inch))
-    story.append(image_block("model4_plot_outputs/05_multivariable_models_past_month_predictors_of_performance.png", "Figure 3. Combined attempted V-grade total, average session duration, and prior performance. The daily model explains 4.0% of variance; the weekly model explains 11.8%.", max_height=3.45 * inch))
+    story.append(image_block("model4/03_performance_momentum_tests.png", "Figure 2. Past-28-day performance versus next-day and next-week performance. Both slopes are positive (p=0.00471 and p=0.00611), but R2 remains low.", max_height=3.25 * inch))
+    story.append(image_block("model4/05_multivariable_models_past_month_predictors_of_performance.png", "Figure 3. Combined attempted V-grade total, average session duration, and prior performance. The daily model explains 4.0% of variance; the weekly model explains 11.8%.", max_height=3.45 * inch))
 
     story.append(PageBreak())
     story.append(para("Evidence 3: Resting Yesterday", "Heading1"))
     story.append(para("The rested-yesterday group performed 0.167 nats lower on average, with significant t-test and Mann-Whitney results. This directly rejects a simple same-day performance boost in this dataset. It does not establish that rest causes worse performance, because rest may be chosen after hard training or when already fatigued.", "BodyText"))
-    story.append(image_block("model4_plot_outputs/07_does_resting_yesterday_predict_today_s_performance_diff_0_167_t_p_0_000257_mw_p_.png", "Figure 4. Today's mean performance after climbing versus resting yesterday. The observed difference is negative, not positive.", max_height=5.7 * inch))
+    story.append(image_block("model4/07_does_resting_yesterday_predict_today_s_performance_diff_0_167_t_p_0_000257_mw_p_.png", "Figure 4. Today's mean performance after climbing versus resting yesterday. The observed difference is negative, not positive.", max_height=5.7 * inch))
 
     story.append(PageBreak())
     story.append(para("Evidence 4: ACWR, Injury, And Performance", "Heading1"))
     story.append(para("The injury-date comparison is strongest for send-surprise ACWR, total and average V-point ACWR, and several information-load ACWR definitions. Session-duration, performance, and failure-surprise ACWR are not significant in this figure, so the conclusion is 'several ACWR measures predict injury,' not 'every ACWR measure does.'", "BodyText"))
-    story.append(image_block("model3_plot_outputs/35_max_prior_week_acwr_on_injury_dates_vs_non_injury_days.png", "Figure 5. Maximum prior-week ACWR on injury dates versus non-injury days. Red crosses are injury dates; each panel reports Mann-Whitney p, logistic p, and AUC.", max_height=6.1 * inch))
+    story.append(image_block("model3/35_max_prior_week_acwr_on_injury_dates_vs_non_injury_days.png", "Figure 5. Maximum prior-week ACWR on injury dates versus non-injury days. Red crosses are injury dates; each panel reports Mann-Whitney p, logistic p, and AUC.", max_height=6.1 * inch))
 
     story.append(PageBreak())
     story.append(para("ACWR Raises Risk But Does Not Guarantee Injury", "Heading2"))
     story.append(para("The V-point models use attempted V-points. Total V-point ACWR is trailing 7-day total divided by trailing 28-day total. Average V-point ACWR compares the analogous rolling daily-average grade measures. With only 14 injuries among 738 modeled days, absolute fitted risk stays low even when relative risk rises.", "BodyText"))
-    story.append(image_block("model3_plot_outputs/36_estimated_injury_probability_from_v_point_acwr.png", "Figure 6. Estimated injury probability from maximum prior-7-day total and average V-point ACWR. The rising red curves support increased risk; their low absolute height shows why high ACWR also creates many false positives.", max_height=4.25 * inch))
+    story.append(image_block("model3/36_estimated_injury_probability_from_v_point_acwr.png", "Figure 6. Estimated injury probability from maximum prior-7-day total and average V-point ACWR. The rising red curves support increased risk; their low absolute height shows why high ACWR also creates many false positives.", max_height=4.25 * inch))
     story.append(para("Across injury dates with enough history, maximum prior-7-day total V-point ACWR had mean 0.5084 and sample variance 0.0603. Average V-point ACWR had mean 1.9742 and sample variance 1.0113.", "Small"))
 
     story.append(PageBreak())
     story.append(para("ACWR Does Not Predict Better Performance", "Heading2"))
     story.append(para("Across total load, mean load, send surprise, total V-points, and average V-points, no next-day or next-week relationship is statistically significant. Several weekly slopes are slightly negative. This is the direct evidence behind treating ACWR as a risk monitor rather than a performance target.", "BodyText"))
-    story.append(image_block("model4_plot_outputs/08_past_week_acwr_predicting_future_performance.png", "Figure 7. Past-week ACWR versus next-day and next-week performance. All displayed p-values are non-significant, and explained variance is near zero.", max_height=5.35 * inch))
+    story.append(image_block("model4/08_past_week_acwr_predicting_future_performance.png", "Figure 7. Past-week ACWR versus next-day and next-week performance. All displayed p-values are non-significant, and explained variance is near zero.", max_height=5.35 * inch))
 
     story.append(PageBreak())
     story.append(para("Evidence 5: Failure Momentum And Volume", "Heading1"))
     story.append(para("Failure surprise has measurable momentum: prior-28-day failure surprise explains 5.4% of next-day and 10.9% of next-week failure surprise. This may contain mental state, fatigue, tactics, conditions, route selection, or persistent project difficulty.", "BodyText"))
-    story.append(image_block("model4_fail_plot_outputs/03_surprise_fail_momentum_tests.png", "Figure 8. Failure-surprise momentum. Both next-day and next-week slopes are positive and statistically significant.", max_height=3.45 * inch))
+    story.append(image_block("model4_fail/03_surprise_fail_momentum_tests.png", "Figure 8. Failure-surprise momentum. Both next-day and next-week slopes are positive and statistically significant.", max_height=3.45 * inch))
     story.append(para("Past-month attempted V-grade total is negatively associated with daily failure surprise (R2=0.027, p=0.00925). The average attempted grade panel is non-significant, so the evidence points to total attempted volume rather than simply trying harder grades.", "BodyText"))
     story.append(image_block(failure_volume_panel, "Figure 9. Past-month attempted V-grade total versus daily failure surprise (R2=0.027, p=0.00925). The fitted association is negative.", max_height=3.5 * inch))
 
@@ -325,7 +329,7 @@ def build():
     story.append(para("Past-month average session duration has a small positive association with daily send surprise (R2=0.017, p=0.040). That is a weak association, and it may reflect more opportunities, warmup, project selection, or session intent rather than a causal benefit from extending every session.", "BodyText"))
     story.append(image_block(send_duration_panel, "Figure 10. Past-month average session duration versus daily send surprise (R2=0.017, p=0.040). The fitted association is positive but weak.", max_height=3.75 * inch))
     story.append(para("Recent send surprise itself has no detectable momentum: next-day p=0.879 and next-week p=0.777. This contrasts sharply with failure surprise.", "BodyText"))
-    story.append(image_block("model4_send_plot_outputs/03_surprise_send_momentum_tests.png", "Figure 11. Send-surprise momentum tests. Both fitted lines are essentially flat and non-significant.", max_height=3.2 * inch))
+    story.append(image_block("model4_send/03_surprise_send_momentum_tests.png", "Figure 11. Send-surprise momentum tests. Both fitted lines are essentially flat and non-significant.", max_height=3.2 * inch))
 
     story.append(PageBreak())
     story.append(para("Interpretation And Practical Use", "Heading1"))

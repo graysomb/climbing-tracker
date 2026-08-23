@@ -9,9 +9,10 @@ from scipy.optimize import curve_fit, minimize
 from scipy.stats import chi2, mannwhitneyu
 
 # ---- settings ----
-csv_path = "climb_data (4).csv"
+analysis_dir = Path(__file__).resolve().parent
+csv_path = analysis_dir / "data" / "climb_data.csv"
 group_by_outside = True   # set False to fit all climbs together
-plot_output_dir = Path("model3_plot_outputs")
+plot_output_dir = analysis_dir / "outputs" / "plots" / "model3"
 
 plt.rcParams["figure.max_open_warning"] = 0
 

@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import matplotlib
+from pathlib import Path
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -8,9 +9,10 @@ from scipy.optimize import curve_fit
 from plot_export import save_all_figures
 
 # ---- settings ----
-csv_path = "climb_data (4).csv"
+analysis_dir = Path(__file__).resolve().parent
+csv_path = analysis_dir / "data" / "climb_data.csv"
 group_by_outside = True   # set False to fit all climbs together
-plot_output_dir = "model2_plot_outputs"
+plot_output_dir = analysis_dir / "outputs" / "plots" / "model2"
 
 plt.rcParams["figure.max_open_warning"] = 0
 
