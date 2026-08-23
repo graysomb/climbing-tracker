@@ -17,7 +17,7 @@ more meaningful.
 
 [Read the climbing model results summary](output/pdf/climbing_model_results_summary.pdf)
 
-[Download the Android APK](app/release/app-release.apk?raw=1)
+[Download the Android APK](app-debug.apk?raw=1)
 
 ## Contents
 
@@ -426,10 +426,10 @@ required.
 
 ### Install directly on an Android phone
 
-1. On the phone, tap [Download the Android APK](app/release/app-release.apk?raw=1).
+1. On the phone, tap [Download the Android APK](app-debug.apk?raw=1).
 2. If GitHub opens a file page instead of downloading, tap the download button
    or **View raw**.
-3. Open the downloaded `app-release.apk` from the browser notification or the
+3. Open the downloaded `app-debug.apk` from the browser notification or the
    phone's Downloads folder.
 4. If Android blocks the installation, follow the prompt to allow the browser
    or Files app to **Install unknown apps**. This permission can be disabled
