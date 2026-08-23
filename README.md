@@ -16,6 +16,7 @@ more meaningful.
 
 ## Contents
 
+- [Model highlights](#model-highlights)
 - [Recording philosophy](#recording-philosophy)
 - [Features](#features)
 - [Recording training](#recording-training)
@@ -28,6 +29,63 @@ more meaningful.
 - [Installing the app](#installing-the-app)
 - [Building from the command line](#building-from-the-command-line)
 - [Technical details](#technical-details)
+
+## Model highlights
+
+The modeling results below summarize this recorded dataset. They are useful for
+describing patterns and generating training questions, but they do not establish
+causation or guarantee that the same relationships apply to another climber.
+See the [Climbing Model Results Summary](output/pdf/climbing_model_results_summary.pdf)
+for the complete analysis, statistical tests, and limitations.
+
+### Send probability by grade and venue
+
+![Send probability by grade for inside and outside climbing](model2_plot_outputs/01_send_probability_by_grade.png)
+
+*Observed send fractions with fitted logistic send-probability curves. Error
+bars show uncertainty in the observed grade-level proportions.*
+
+- Send probability decreases as grade increases for both venues.
+- The indoor fitted curve is shifted roughly one V-grade to the right of the
+  outdoor curve. In this dataset, an indoor climb therefore has a higher fitted
+  send probability than an outdoor climb with the same nominal grade.
+- Later performance and surprise models use venue-specific probability fits so
+  they do not treat the same indoor and outdoor grade as equally difficult.
+
+### Rest after a failed attempt
+
+![Send probability versus rest time after a failed attempt](model2_plot_outputs/26_after_a_fail_does_longer_rest_predict_sends_intervals_400_min.png)
+
+*Observed probability that the next attempt is a send after a failure, grouped
+by elapsed time. The horizontal axis is logarithmic; error bars widen where
+there are fewer observations.*
+
+- Waiting longer within the short-rest range does not show a clear improvement
+  in next-attempt send probability.
+- In particular, the data do not support treating rests shorter than roughly
+  10-11 minutes as a send-probability booster.
+- Long intervals are sparse and can represent session breaks or different
+  climbing days rather than ordinary between-attempt rest.
+- This is observational. Grade, fatigue, tactics, route choice, and the reason
+  for resting can all affect both rest duration and the next result.
+
+### ACWR and recorded injury prediction
+
+![Estimated injury probability from total and average V-point ACWR](model3_plot_outputs/36_estimated_injury_probability_from_v_point_acwr.png)
+
+*Logistic estimates for recorded injury dates using the maximum Total or Mean
+V-point ACWR during the prior seven days. The analysis contains 738 evaluated
+days and 14 recorded injury dates.*
+
+- Higher Total V-point ACWR and Mean V-point ACWR are associated with recorded
+  injury dates in these univariate models (`p = 0.00725` and `p = 0.0056`).
+- Injury and non-injury days overlap substantially. High ACWR is not equivalent
+  to certain injury, and fitted absolute injury probability remains well below
+  50% across the observed range.
+- With only 14 injury dates, false positives and model instability remain
+  important concerns.
+- ACWR is best treated as a workload and risk marker, not a diagnosis, safety
+  threshold, or instruction to pursue a particular ratio.
 
 ## Recording philosophy
 
