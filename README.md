@@ -10,6 +10,8 @@ more meaningful.
 
 [Download the full PDF user guide](output/pdf/climbs_user_guide.pdf)
 
+[Read the climbing model results summary](output/pdf/climbing_model_results_summary.pdf)
+
 [Download the Android APK](app/release/app-release.apk?raw=1)
 
 ## Contents
@@ -19,6 +21,7 @@ more meaningful.
 - [Recording training](#recording-training)
 - [Navigating the app](#navigating-the-app)
 - [Metrics](#metrics)
+- [Model results and methodology](#model-results-and-methodology)
 - [Charts](#charts)
 - [Events](#events)
 - [Export and backup](#export-and-backup)
@@ -279,6 +282,22 @@ must not be used to decide whether training is safe.
 
 The normalized Total and Mean values naturally top out near 197% and 203%,
 respectively.
+
+## Model results and methodology
+
+The 15-page [Climbing Model Results Summary](output/pdf/climbing_model_results_summary.pdf)
+documents the statistical models behind the broader analysis of:
+
+- Send probability by grade and venue
+- Indoor and outdoor session progression and pacing
+- Rest duration after failures
+- Daily and weekly performance predictors
+- Workload and ACWR relationships with recorded injuries
+- Send and failure momentum
+
+It also explains surprise sends, surprise failures, signed performance, model
+limitations, and the distinction between association and prediction. The report
+is included as an appendix in the full PDF user guide as well.
 
 ## Charts
 
