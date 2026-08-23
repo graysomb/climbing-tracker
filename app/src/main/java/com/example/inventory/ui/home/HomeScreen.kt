@@ -246,7 +246,7 @@ private fun HomeBody(
         value = calculateStatistics(filteredItems, baselineMonths)
     }
     val filteredCalcs = calculatedCalcs ?: List(11) { 0f }
-    val preparedVPointsChart by produceState<VPointsChartModel?>(
+    val preparedVPointsChartState = produceState<VPointsChartModel?>(
         initialValue = null,
         filteredItems,
         plotByWeek
@@ -400,7 +400,7 @@ private fun HomeBody(
             ) { page ->
                 when (page) {
                     0 -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        preparedVPointsChart?.let { chartModel ->
+                        preparedVPointsChartState.value?.let { chartModel ->
                             ItemBarChart(
                                 filteredItems,
                                 Modifier.height(280.dp),
@@ -460,7 +460,7 @@ private fun HomeBody(
                             }
                         }
                         item {
-                            preparedVPointsChart?.let { chartModel ->
+                            preparedVPointsChartState.value?.let { chartModel ->
                                 ItemBarChart(
                                     filteredItems,
                                     Modifier.height(280.dp),
@@ -2179,7 +2179,8 @@ fun ItemBarChart(
     preparedData: VPointsChartModel
 ) {
     var defaultViewportKey by remember { mutableStateOf<String?>(null) }
-    val chartKey = "vpoints-${itemList.hashCode()}-$plotByWeek-$showLoadOverlay-$baselineMonths"
+    val chartKey =
+        "vpoints-${preparedData.hashCode()}-${itemList.hashCode()}-$plotByWeek-$showLoadOverlay-$baselineMonths"
     val earliestDate = preparedData.earliestDate
     val barData = remember(preparedData) {
         val sentDataSet = BarDataSet(
