@@ -1,3 +1,19 @@
+
+
+Basic idea is to record failures and sucesses when climbing. Plus a handy timer between attempts!
+**Side Quests:**
+Predict Injuries?
+Predict Climbing Well?
+Profit???
+
+**Future Work:**
+Only works on android :[ someone with a bunch of tokens (not me) should translate it to a cross platform version.
+If you collect a bunch of data I'd love to have it! Plus i'm giving you mine so...... 
+
+**P.S.**
+the thing most correlated with climbing well is climbing 
+tthe thing most correlated with climbing more is having fun while climbing.
+
 # WARNING: AI SLOP
 
 **This README is fully AI-generated right now. The app and models are about 60%
